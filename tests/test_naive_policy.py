@@ -1,13 +1,16 @@
 import unittest
+import sys
+import os
 
-from simulator import Cordinates, Location
+# Add code path to sys path
+file_path = os.path.dirname(os.path.realpath(__file__))
+code_path = os.path.join(file_path, "../code")
+sys.path.append(code_path)
+
 from naive_policy import NaivePolicy
 from reward_manager import RewardManager
-from simulator import InventoryProduct, InventoryNode, DemandNode
-
-class FakeArgs:
-    def __init__(self):
-        self.reward_alpha = 0.5
+from simulator import Cordinates, Location, InventoryProduct, InventoryNode, DemandNode
+from fake_args import FakeArgs
         
 
 class TestNaivePolicy(unittest.TestCase):
@@ -19,15 +22,15 @@ class TestNaivePolicy(unittest.TestCase):
 
         # Create fake inventory nodes
         loc = Location(Cordinates(0, 0))
-        inv_node_id_1 = str(0)
-        inv_prod_1 = InventoryProduct(str(0), 2)
-        inv_prod_2 = InventoryProduct(str(1), 1)
+        inv_node_id_1 = 0
+        inv_prod_1 = InventoryProduct(0, 2)
+        inv_prod_2 = InventoryProduct(1, 1)
         inv_prods = [inv_prod_1, inv_prod_2]
         inv_node_1 = InventoryNode(inv_prods, loc, inv_node_id_1)
 
         loc = Location(Cordinates(10, 10))
-        inv_node_id_2 = str(1)
-        inv_prod_2 = InventoryProduct(str(1), 2)
+        inv_node_id_2 = 1
+        inv_prod_2 = InventoryProduct(1, 2)
         inv_prods = [inv_prod_2]
         inv_node_2 = InventoryNode(inv_prods, loc, inv_node_id_2)
 
@@ -35,8 +38,8 @@ class TestNaivePolicy(unittest.TestCase):
 
         # Create fake demand node
         loc = Location(Cordinates(2, 1))
-        inv_prod_1 = InventoryProduct(str(0), 1)
-        inv_prod_2 = InventoryProduct(str(1), 2)
+        inv_prod_1 = InventoryProduct(0, 1)
+        inv_prod_2 = InventoryProduct(1, 2)
         inv_prods = [inv_prod_1, inv_prod_2]
         demand_node = DemandNode(inv_prods, loc)
         
@@ -60,13 +63,13 @@ class TestNaivePolicy(unittest.TestCase):
         
         fulfill = policy_results.fulfill_plan.get_fulfillment(inv_node_id_1)
         self.assertEqual(fulfill.inv_node_id, inv_node_id_1)
-        self.assertEqual(fulfill.inv.product_quantity(str(0)), exp_node_0_sku_0_quant)
-        self.assertEqual(fulfill.inv.product_quantity(str(1)), exp_node_0_sku_1_quant)
+        self.assertEqual(fulfill.inv.product_quantity(0), exp_node_0_sku_0_quant)
+        self.assertEqual(fulfill.inv.product_quantity(1), exp_node_0_sku_1_quant)
         
         fulfill = policy_results.fulfill_plan.get_fulfillment(inv_node_id_2)
         self.assertEqual(fulfill.inv_node_id, inv_node_id_2)
-        self.assertEqual(fulfill.inv.product_quantity(str(0)), exp_node_1_sku_0_quant)
-        self.assertEqual(fulfill.inv.product_quantity(str(1)), exp_node_1_sku_1_quant)
+        self.assertEqual(fulfill.inv.product_quantity(0), exp_node_1_sku_0_quant)
+        self.assertEqual(fulfill.inv.product_quantity(1), exp_node_1_sku_1_quant)
 
 
 if __name__ == '__main__':

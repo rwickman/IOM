@@ -1,12 +1,14 @@
 import random
 from dataclasses import dataclass
 import numpy as np
-
+import matplotlib.pyplot as plt
+import json
+import os
 
 @dataclass
 class InventoryProduct:
-    # Unique ID, SKU is str instead of int to model real-life
-    sku_id: str
+    # Unique ID
+    sku_id: int
     # Number of products with this SKU
     quantity: int
 
@@ -26,23 +28,6 @@ class Location:
     @property
     def cords(self):
         return self._cords
-class Product:
-    def __init__(self, name: str, price: float):
-        self._name = name
-
-    @property
-    def name(self):
-        """Name of product."""
-        return self._name
-    
-class Order:
-    def __init__(self, products: list):
-        self._products = products
-    
-    @property
-    def total_price(self):
-        return sum([product.price for product in self._products])
-
 
 class Node:
     def __init__(self, inv_prods: list, loc: Location):
@@ -77,7 +62,7 @@ class Inventory:
         if inv_prod.quantity < 0:
             raise Exception("Product quantity cant be less than 0.")
 
-        if not inv_prod.sku_id:
+        if inv_prod.sku_id is None:
             raise Exception("Invalid SKU ID.")
 
         if inv_prod.sku_id not in self._inv_dict:
@@ -99,7 +84,7 @@ class Inventory:
         assert self._inv_size >= 0
     
     
-    def product_quantity(self, sku_id: str) -> int:
+    def product_quantity(self, sku_id: int) -> int:
         if sku_id not in self._inv_dict:
             return 0
         else:
@@ -119,12 +104,12 @@ class Inventory:
 
 
 class InventoryNode(Node):
-    def __init__(self, inv_prods: list, loc: Location, inv_node_id: str):
+    def __init__(self, inv_prods: list, loc: Location, inv_node_id: int):
         super().__init__(inv_prods, loc)
         self._inv_node_id = inv_node_id
     
     @property
-    def inv_node_id(self) -> str:
+    def inv_node_id(self) -> int:
         return self._inv_node_id
 
 class InventoryNodeManager:
@@ -167,15 +152,15 @@ class InventoryNodeManager:
     def inv(self):
         return self._inv
 
-    def product_quantity(self, sku_id: str) -> int:
+    def product_quantity(self, sku_id: int) -> int:
         return self._inv.product_quantity(sku_id)
         
     
-    def add_product(self, inv_node_id: str, inv_prod: InventoryProduct):
-        self._inv_nodes_dict[inv_node_id].add_product(inv_prod)
+    def add_product(self, inv_node_id: int, inv_prod: InventoryProduct):
+        self._inv_nodes_dict[inv_node_id].inv.add_product(inv_prod)
         self._inv.add_product(inv_prod)
 
-    def remove_product(self, inv_node_id: str, inv_prod: InventoryProduct):
+    def remove_product(self, inv_node_id: int, inv_prod: InventoryProduct):
         self._inv_nodes_dict[inv_node_id].inv.remove_product(inv_prod)
 
         self._inv.remove_product(inv_prod)
@@ -184,27 +169,78 @@ class InventoryNodeManager:
 class Simulator:
     def __init__(self, args, policy):
         self.args = args
+        if not os.path.exists(self.args.save_dir):
+            os.mkdir(self.args.save_dir)
         self._policy = policy
+        self._train_file = os.path.join(
+            self.args.save_dir,
+            "train_dict.json")
 
+        self._train_dict = {
+            "ep_reward_avgs" : [],
+            "policy_losses" : [],
+            "inv_node_cords" : []
+        }
+
+        if self.args.load:
+            self._load()
+
+        self._init_inv_nodes()
+
+    def _init_inv_nodes(self):
+        """Initialize the inventory nodes."""
         self._inv_nodes = []
-        for i in range(self.args.num_inv_nodes):
-            self._inv_nodes.append(self._gen_inv_node())
+        for i in range(self.args.num_inv_nodes):        
+            if self.args.load:
+                # Create using saved location
+                cords = Cordinates(
+                    self._train_dict["inv_node_cords"][i][0],
+                    self._train_dict["inv_node_cords"][i][1])
+                loc = Location(cords)
+                inv_node = self._gen_inv_node(loc)
+            else:
+                inv_node = self._gen_inv_node()
+                # Save new location to restore later
+                self._train_dict["inv_node_cords"].append(
+                    [inv_node.loc.cords.x, inv_node.loc.cords.y])  
+
+            self._inv_nodes.append(inv_node)
+        
         self._inv_node_man = InventoryNodeManager(self._inv_nodes)
 
-    def _gen_inv_node(self) -> InventoryNode:
-        loc = self._rand_loc()
-        inv_node_id = str(len(self._inv_nodes))
+    def _reset(self):
+        self._restock_inv()
+        # Tell the policy it is over
+        self._policy.reset()
 
+    def _gen_inv_node(self, loc: Location = None) -> InventoryNode:
+        if loc is None:
+            loc = self._rand_loc()
+        
+        inv_node_id = len(self._inv_nodes)
+
+        # Generate the inventory for this node
+        inv_prods = self._gen_inv_node_stock()
+
+        return InventoryNode(inv_prods, loc, inv_node_id)
+
+    def _gen_inv_node_stock(self):
         # Generate the inventory for this node
         inv_prods = []
         for i in range(self.args.num_skus):
             # Generate a random quantity for this SKU
-            rand_quant = random.randint(self.args.min_prod_inv, self.args.max_prod_inv)
+            rand_quant = random.randint(self.args.min_inv_prod, self.args.max_inv_prod)
             # Make product 
-            inv_prods.append(InventoryProduct(str(i), rand_quant))
+            inv_prods.append(InventoryProduct(i, rand_quant))
 
-        return InventoryNode(inv_prods, loc, inv_node_id)
-         
+        return inv_prods
+
+    def _restock_inv(self):
+        for i in range(self.args.num_inv_nodes):
+            inv_prods = self._gen_inv_node_stock()
+            for inv_prod in inv_prods:
+                self._inv_node_man.add_product(i, inv_prod)
+
     def _gen_demand_node(self):
         """Generate a demand node."""
         # Create random location
@@ -231,7 +267,6 @@ class Simulator:
               
         return DemandNode(inv_prods, loc)
 
-
     def _rand_loc(self) -> Location:
         rand_x = random.uniform(-self.args.cord_bounds, self.args.cord_bounds)
         rand_y = random.uniform(-self.args.cord_bounds, self.args.cord_bounds)
@@ -239,22 +274,78 @@ class Simulator:
         loc = Location(cords)
         return loc
 
+    def _save(self):
+        with open(self._train_file, "w") as f:
+            json.dump(self._train_dict, f)
+    
+    def _load(self):
+        if not os.path.exists(self._train_file):
+            raise Exception(f"Cannot load because train file {self._train_file} does not exists.")
+        with open(self._train_file) as f:
+            self._train_dict = json.load(f)        
+
+    def plot_results(self):
+        def moving_average(x):
+            return np.convolve(x, np.ones(self.args.reward_smooth_w), 'valid') / self.args.reward_smooth_w
+        
+        fig, axs = plt.subplots(2)
+        y = moving_average(self._train_dict["ep_reward_avgs"])
+        axs[0].plot(y)
+        axs[0].set(
+            title="Episode Average Reward",
+            xlabel="Episode",
+            ylabel="Average Reward"
+        )
+
+        axs[1].plot(self._train_dict["policy_losses"])
+        axs[1].set(
+            title="Policy MSE Loss",
+            xlabel="Episode",
+            ylabel="Average Loss"
+        )
+
+        plt.show()
+
     def run(self):
-        for t in range(self.args.T_max):
-            if self._inv_node_man.inv.inv_size <= 0:
-                break
+        for e_i in range(self.args.episodes):
+            rewards = []
+            for t in range(self.args.T_max):
+                if self._inv_node_man.inv.inv_size <= 0:
+                    break
 
-            demand_node = self._gen_demand_node()
+                demand_node = self._gen_demand_node()
 
-            # Get the fulfillment plan
-            policy_results = self._policy(self._inv_nodes, demand_node)
+                # Get the fulfillment plan
+                policy_results = self._policy(self._inv_nodes, demand_node)
 
-            # Remove the products from the inventory nodes
-            for fulfillment in policy_results.fulfill_plan.fulfillments():
-                for inv_prod in fulfillment.inv.items():
-                    self._inv_node_man.remove_product(
-                        fulfillment.inv_node_id, 
-                        inv_prod)
+                # Remove the products from the inventory nodes
+                for fulfillment in policy_results.fulfill_plan.fulfillments():
+                    for inv_prod in fulfillment.inv.items():
+                        self._inv_node_man.remove_product(
+                            fulfillment.inv_node_id,
+                            inv_prod)
 
-            print(self._inv_node_man.inv.inv_size)
-            print(policy_results.rewards)
+                rewards.extend(
+                    [exp.reward for exp in policy_results.exps])
+
+            # Reset the simulator for the next episode
+            self._reset()
+
+            if len(rewards) == 0:
+                continue
+
+            reward_avg = sum(rewards) / len(rewards)
+            print("reward_avg", reward_avg)
+            self._train_dict["ep_reward_avgs"].append(reward_avg)
+                        
+            # Train if this is a trainable policy
+            if self._policy.is_trainable and self._policy.is_train_ready():
+                loss = self._policy.train()                
+                
+                self._train_dict["policy_losses"].append(loss)
+
+        if self._policy.is_trainable:
+            self._policy.save()
+        self._save()
+        if self.args.plot:
+            self.plot_results()
