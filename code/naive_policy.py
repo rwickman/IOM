@@ -1,9 +1,10 @@
 from simulator import InventoryNode, DemandNode, InventoryProduct
 from fulfillment_plan import FulfillmentPlan
-from policy import PolicyResults
+from policy import PolicyResults, Policy, Experience
 
-class NaivePolicy:
+class NaivePolicy(Policy):
     def __init__(self, args, reward_man):
+        super().__init__(is_trainable=False)
         self.args = args
         self._reward_man = reward_man
 
@@ -17,7 +18,7 @@ class NaivePolicy:
         # Keep up with fulfillment requests for every inventory node
         fulfill_plan = FulfillmentPlan()
         rewards = []
-
+        exps = []
         for _ in range(demand_node.inv.inv_size):
             max_inv_node_id = max_reward = max_sku_id = None
 
@@ -44,9 +45,7 @@ class NaivePolicy:
                             cur_reward = self._reward_man.get_reward(
                                 inv_node,
                                 demand_node,
-                                fulfill_plan,
-                                inv_node.inv_node_id,
-                                inv_prod)
+                                fulfill_plan)
 
                             if max_reward is None or cur_reward > max_reward:
                                 max_reward = cur_reward
@@ -61,9 +60,10 @@ class NaivePolicy:
 
             fulfill_dict[max_sku_id] += 1
             rewards.append(max_reward)
-
+            exps.append(
+                Experience(None, max_inv_node_id, max_reward))
         
-        return PolicyResults(fulfill_plan, rewards)
+        return PolicyResults(fulfill_plan, exps)
 
 
                     

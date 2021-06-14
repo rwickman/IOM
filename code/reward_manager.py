@@ -8,15 +8,12 @@ class RewardManager:
     def get_reward(self,
                     inv_node: InventoryNode,
                     demand_node: DemandNode,
-                    fulfill_plan: FulfillmentPlan,
-                    inv_node_id: str,
-                    inv_prod: InventoryProduct):
+                    fulfill_plan: FulfillmentPlan):
 
-        inv_fulfill = fulfill_plan.get_fulfillment(inv_node_id)
+        inv_fulfill = fulfill_plan.get_fulfillment(inv_node.inv_node_id)
         dist = inv_node.loc.get_distance(demand_node.loc)
 
         if inv_fulfill:
             return -dist * self.args.reward_alpha ** inv_fulfill.inv.inv_size
         else:
             return -dist
-
