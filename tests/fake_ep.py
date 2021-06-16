@@ -71,6 +71,8 @@ class FakeEpisode:
         # Create the actions
         self.actions = [0, 0, 1]
 
+        self.sku_ids = [0, 1, 1]
+
         # Create fake experiences
         self.exps = []
         for i in range(len(self.states)):

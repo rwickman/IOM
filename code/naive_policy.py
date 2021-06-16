@@ -10,7 +10,7 @@ class NaivePolicy(Policy):
 
     def __call__(self,
                 inv_nodes: list[InventoryNode],
-                demand_node: list[DemandNode]) -> FulfillmentPlan:
+                demand_node: DemandNode) -> FulfillmentPlan:
         
         # Keep up with what products have already been allocated
         fulfill_dict = {}
@@ -54,7 +54,6 @@ class NaivePolicy(Policy):
 
             # Create the demand for one product with SKU at greedy best
             max_inv_prod = InventoryProduct(max_sku_id, 1)
-            #print("NAIVE POLICY", max_inv_node_id, max_inv_prod)
             
             fulfill_plan.add_product(max_inv_node_id, max_inv_prod)
 

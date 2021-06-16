@@ -16,3 +16,7 @@ class FakeArgs:
         self.per_beta = 0.4
         self.per_alpha = 0.6
         self.eps = 1e-6
+        self.cord_bounds = 10
+        self.min_inv_prod = 1
+        self.max_inv_prod = 1
+        self.kappa = 2

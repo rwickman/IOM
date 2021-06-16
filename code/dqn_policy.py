@@ -194,8 +194,8 @@ class DQNTrainer(Policy):
 
     def __call__(self, 
                 inv_nodes: list[InventoryNode],
-                demand_node: list[DemandNode],
-                argmax=False) -> FulfillmentPlan:
+                demand_node: DemandNode,
+                argmax=False) -> PolicyResults:
 
         inv = torch.zeros(self.args.num_inv_nodes, self.args.num_skus)
 
