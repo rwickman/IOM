@@ -5,7 +5,7 @@ code_path = os.path.join(file_path, "../code")
 sys.path.append(code_path)
 
 from policy import Experience
-from simulator import Cordinates, Location, InventoryProduct, InventoryNode, DemandNode
+from simulator import Coordinates, Location, InventoryProduct, InventoryNode, DemandNode
 from fake_args import FakeArgs
 
 class FakeEpisode:
@@ -13,14 +13,14 @@ class FakeEpisode:
         self.args = FakeArgs()
 
         # Create fake inventory nodes
-        loc = Location(Cordinates(0, 0))
+        loc = Location(Coordinates(0, 0))
         inv_node_id_1 = 0
         inv_prod_1 = InventoryProduct(0, 2)
         inv_prod_2 = InventoryProduct(1, 1)
         inv_prods = [inv_prod_1, inv_prod_2]
         inv_node_1 = InventoryNode(inv_prods, loc, inv_node_id_1)
 
-        loc = Location(Cordinates(10, 10))
+        loc = Location(Coordinates(10, 10))
         inv_node_id_2 = 1
         inv_prod_2 = InventoryProduct(1, 2)
         inv_prods = [inv_prod_2]
@@ -28,7 +28,7 @@ class FakeEpisode:
         self.inv_nodes = [inv_node_1, inv_node_2]
 
         # Create fake demand node
-        loc = Location(Cordinates(2, 1))
+        loc = Location(Coordinates(2, 1))
         inv_prod_1 = InventoryProduct(0, 1)
         inv_prod_2 = InventoryProduct(1, 2)
         inv_prods = [inv_prod_1, inv_prod_2]
@@ -46,25 +46,28 @@ class FakeEpisode:
             -self.dist_2
         ]
 
+        inv_coords = [0,0,10,10]
+        demand_coords = [2,1]
+
         # Create the states
         inv = [2, 1, 0, 2]
         demand = [1, 2]
         cur_fulfill = [0,0,0,0]
         item_hot = [1,0]
-        state_1 = torch.tensor(inv + demand + cur_fulfill + item_hot)
+        state_1 = torch.tensor(inv + inv_coords + demand + demand_coords + cur_fulfill + item_hot)
 
         inv = [1, 1, 0, 2]
-        demand = [0,2]
+        demand = [0, 2]
         cur_fulfill = [1, 0, 0, 0]
         item_hot = [0, 1]
-        state_2 = torch.tensor(inv + demand + cur_fulfill + item_hot)
+        state_2 = torch.tensor(inv + inv_coords + demand + demand_coords + cur_fulfill + item_hot)
 
 
         inv = [1, 0, 0, 2]
-        demand = [0,1]
+        demand = [0, 1]
         cur_fulfill = [1, 1, 0, 0]
         item_hot = [0, 1]
-        state_3 = torch.tensor(inv + demand + cur_fulfill + item_hot)
+        state_3 = torch.tensor(inv + inv_coords + demand + demand_coords + cur_fulfill + item_hot)
 
         self.states = [state_1, state_2, state_3]
 

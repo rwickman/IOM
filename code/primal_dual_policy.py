@@ -12,8 +12,7 @@ from simulator import InventoryNode, DemandNode, InventoryProduct
 
 class PrimalDual(Policy):
     def __init__(self, args, reward_man: RewardManager):
-        super().__init__(True)
-        self.args = args
+        super().__init__(args, True)
         self._reward_man = reward_man
 
         # Initialize dual variables

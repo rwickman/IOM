@@ -5,6 +5,8 @@ import matplotlib.pyplot as plt
 import json
 import os
 
+# from policy import PolicyResults
+
 @dataclass
 class InventoryProduct:
     # Unique ID
@@ -12,22 +14,25 @@ class InventoryProduct:
     # Number of products with this SKU
     quantity: int
 
+    def copy(self):
+        return InventoryProduct(self.sku_id, self.quantity)
+
 @dataclass
-class Cordinates:
+class Coordinates:
     x: float
     y: float
     
 class Location:
-    def __init__(self, cords: Cordinates):
-        self._cords = cords
+    def __init__(self, coords: Coordinates):
+        self._coords = coords
 
     def get_distance(self, other_loc):
-        """Get euclidean distace between cordinates."""
-        return ((self._cords.x - other_loc.cords.x) ** 2 + (self._cords.y - other_loc.cords.y) ** 2) ** 0.5
+        """Get euclidean distace between coordinates."""
+        return ((self._coords.x - other_loc.coords.x) ** 2 + (self._coords.y - other_loc.coords.y) ** 2) ** 0.5
 
     @property
-    def cords(self):
-        return self._cords
+    def coords(self):
+        return self._coords
 
 class Node:
     def __init__(self, inv_prods: list, loc: Location):
@@ -170,45 +175,59 @@ class InventoryNodeManager:
                 self.remove_product(inv_node_id, inv_prod)
 
 class Simulator:
-    def __init__(self, args, policy):
+    def __init__(self, args, policy=None):
         self.args = args
-        if not os.path.exists(self.args.save_dir):
-            os.mkdir(self.args.save_dir)
-        self._policy = policy
-        self._train_file = os.path.join(
-            self.args.save_dir,
-            "train_dict.json")
 
         self._train_dict = {
-            "ep_reward_avgs" : [],
+            "policy_name" : self.args.policy,
+            "ep_avg_rewards" : [],
             "policy_losses" : [],
-            "inv_node_cords" : []
+            "inv_node_coords" : []
         }
 
-        if self.args.load:
-            self._load()
+        if policy:
+            if not os.path.exists(self.args.save_dir):
+                os.mkdir(self.args.save_dir)
+            self._policy = policy
+            self._train_file = os.path.join(
+                self.args.save_dir,
+                "train_dict.json")
+
+            if self.args.load:
+                self._load()
+        else:
+            self._policy = None
 
         self._init_inv_nodes()
 
     def _init_inv_nodes(self):
         """Initialize the inventory nodes."""
+        
+        # Check if you want specific location coordinates
+        if self.args.loc_json:
+            with open(self.args.loc_json) as f:
+                inv_node_locs = self._load_locs()
+        
         self._inv_nodes = []
         for i in range(self.args.num_inv_nodes):        
-            if self.args.load:
+            if self.args.loc_json:                
+                inv_node = self._gen_inv_node(inv_node_locs[i])
+            elif self.args.load:
                 # Create using saved location
-                cords = Cordinates(
-                    self._train_dict["inv_node_cords"][i][0],
-                    self._train_dict["inv_node_cords"][i][1])
-                loc = Location(cords)
+                coords = Coordinates(
+                    self._train_dict["inv_node_coords"][i][0],
+                    self._train_dict["inv_node_coords"][i][1])
+                loc = Location(coords)
                 inv_node = self._gen_inv_node(loc)
             else:
                 inv_node = self._gen_inv_node()
+
                 # Save new location to restore later
-                self._train_dict["inv_node_cords"].append(
-                    [inv_node.loc.cords.x, inv_node.loc.cords.y])  
+                self._train_dict["inv_node_coords"].append(
+                    [inv_node.loc.coords.x, inv_node.loc.coords.y])  
 
             self._inv_nodes.append(inv_node)
-        
+
         self._inv_node_man = InventoryNodeManager(self._inv_nodes)
 
     def _reset(self):
@@ -219,12 +238,13 @@ class Simulator:
         self._restock_inv()
 
         # Reset policy for new episode
-        self._policy.reset()
+        if self._policy:
+            self._policy.reset()
 
     def _gen_inv_node(self, loc: Location = None) -> InventoryNode:
         if loc is None:
             loc = self._rand_loc()
-        
+
         inv_node_id = len(self._inv_nodes)
 
         # Generate the inventory for this node
@@ -250,16 +270,18 @@ class Simulator:
             for inv_prod in inv_prods:
                 self._inv_node_man.add_product(i, inv_prod)
 
-    def _gen_demand_node(self):
+    def _gen_demand_node(self, stock: list = None):
         """Generate a demand node."""
+        if not stock:
+            stock = self._inv_node_man.stock
+
+            # Get non-zero items
+            stock = [item for item in stock if item.quantity > 0]
+        
         # Create random location
         loc = self._rand_loc()
 
         # Choose a random sku_id to allow for at least one order
-        stock = self._inv_node_man.stock
-
-        # Get non-zero items
-        stock = [item for item in stock if item.quantity > 0]
         random.shuffle(stock)
 
         inv_prods = []
@@ -277,10 +299,10 @@ class Simulator:
         return DemandNode(inv_prods, loc)
 
     def _rand_loc(self) -> Location:
-        rand_x = random.uniform(-self.args.cord_bounds, self.args.cord_bounds)
-        rand_y = random.uniform(-self.args.cord_bounds, self.args.cord_bounds)
-        cords = Cordinates(rand_x, rand_y)
-        loc = Location(cords)
+        rand_x = random.uniform(-self.args.coord_bounds, self.args.coord_bounds)
+        rand_y = random.uniform(-self.args.coord_bounds, self.args.coord_bounds)
+        coords = Coordinates(rand_x, rand_y)
+        loc = Location(coords)
         return loc
 
     def _save(self):
@@ -293,12 +315,25 @@ class Simulator:
         with open(self._train_file) as f:
             self._train_dict = json.load(f)        
 
+    def _load_locs(self):
+        """Load inventory node locations."""
+        inv_locs = []
+        with open(self.args.loc_json) as f:
+            coords_list = json.load(f)
+            for coords in coords_list:
+                loc = Location(Coordinates(coords[0], coords[1]))
+                inv_locs.append(loc)
+        
+        return inv_locs
+
+
+
     def plot_results(self):
         def moving_average(x):
             return np.convolve(x, np.ones(self.args.reward_smooth_w), 'valid') / self.args.reward_smooth_w
         
         fig, axs = plt.subplots(2)
-        y = moving_average(self._train_dict["ep_reward_avgs"])
+        y = moving_average(self._train_dict["ep_avg_rewards"])
         axs[0].plot(y)
         axs[0].set(
             title="Episode Average Reward",
@@ -315,6 +350,15 @@ class Simulator:
 
         plt.show()
 
+    def remove_products(self, policy_results):
+        # Remove the products from the inventory nodes
+        for fulfillment in policy_results.fulfill_plan.fulfillments():
+            for inv_prod in fulfillment.inv.items():
+                self._inv_node_man.remove_product(
+                    fulfillment.inv_node_id,
+                    inv_prod)
+
+
     def run(self):
         for e_i in range(self.args.episodes):
             rewards = []
@@ -327,13 +371,8 @@ class Simulator:
                 # Get the fulfillment plan
                 policy_results = self._policy(self._inv_nodes, demand_node)
 
-                # Remove the products from the inventory nodes
-                for fulfillment in policy_results.fulfill_plan.fulfillments():
-                    for inv_prod in fulfillment.inv.items():
-                        self._inv_node_man.remove_product(
-                            fulfillment.inv_node_id,
-                            inv_prod)
-
+                self.remove_products(policy_results)
+        
                 rewards.extend(
                     [exp.reward for exp in policy_results.exps])
 
@@ -343,9 +382,10 @@ class Simulator:
             if len(rewards) == 0:
                 continue
 
-            reward_avg = sum(rewards) / len(rewards)
-            print("reward_avg", reward_avg)
-            self._train_dict["ep_reward_avgs"].append(reward_avg)
+            avg_reward = (sum(rewards) / len(rewards)) * ((2 * self.args.coord_bounds) **2)
+            print("avg_reward", avg_reward)
+
+            self._train_dict["ep_avg_rewards"].append(avg_reward)
 
             # Train if this is a trainable policy
             if self._policy.is_trainable and self._policy.is_train_ready():

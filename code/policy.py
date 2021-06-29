@@ -1,5 +1,5 @@
-from dataclasses import dataclass
 import torch
+from dataclasses import dataclass
 
 from fulfillment_plan import FulfillmentPlan
 
@@ -12,13 +12,10 @@ class Experience:
 
 @dataclass
 class PolicyResults:
-    fulfill_plan: list[Experience]
-    exps: list[float]
+    fulfill_plan: FulfillmentPlan
+    exps: list[Experience]
 
 class Policy:
-    def __init__(self, is_trainable=True):
-        self.is_trainable = is_trainable
-        
-
-    def reset(self):
-        pass
+    def __init__(self, args, is_trainable=True):
+        self.args = args
+        self.is_trainable = is_trainable        

@@ -4,13 +4,12 @@ from policy import PolicyResults, Policy, Experience
 
 class NaivePolicy(Policy):
     def __init__(self, args, reward_man):
-        super().__init__(is_trainable=False)
-        self.args = args
+        super().__init__(args, is_trainable=False)
         self._reward_man = reward_man
 
     def __call__(self,
                 inv_nodes: list[InventoryNode],
-                demand_node: DemandNode) -> FulfillmentPlan:
+                demand_node: DemandNode) -> PolicyResults:
         
         # Keep up with what products have already been allocated
         fulfill_dict = {}
@@ -63,18 +62,3 @@ class NaivePolicy(Policy):
                 Experience(None, max_inv_node_id, max_reward))
         
         return PolicyResults(fulfill_plan, exps)
-
-
-                    
-
-
-
-
-
-                
-                
-
-            
-            
-            
-            

@@ -8,7 +8,6 @@ sys.path.append(code_path)
 
 from dqn_policy import DQNTrainer
 from reward_manager import RewardManager
-from simulator import Cordinates, Location, InventoryProduct, InventoryNode, DemandNode
 from fake_args import FakeArgs
 from fake_ep import FakeEpisode
 
