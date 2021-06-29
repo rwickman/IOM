@@ -2,6 +2,7 @@ import argparse
 from simulator import Simulator
 from naive_policy import NaivePolicy
 from dqn_policy import DQNTrainer
+from primal_dual_policy import PrimalDual
 from reward_manager import RewardManager
 
 def main(args):
@@ -9,9 +10,11 @@ def main(args):
 
     if args.policy == "naive":
         policy = NaivePolicy(args, reward_man)
-    else:
+    elif args.policy == "dqn":
         # Create the policy
         policy = DQNTrainer(args, reward_man)
+    else:
+        policy = PrimalDual(args, reward_man)
 
     # Create the simulator
     sim = Simulator(args, policy)
@@ -27,7 +30,7 @@ if __name__ == "__main__":
                     help="Number of unique products SKUs.")
     parser.add_argument("--max_inv_prod", type=int, default=10,
                     help="Max inventory for each product across all inventory nodes.")
-    parser.add_argument("--min_inv_prod", type=int, default=0,
+    parser.add_argument("--min_inv_prod", type=int, default=1,
                     help="Min inventory for each product across all inventory nodes.")
     parser.add_argument("--num_inv_nodes", type=int, default=2,
                     help="Number of inventory nodes.")
@@ -81,11 +84,16 @@ if __name__ == "__main__":
                     help="Number of training batches before target is updated.")
     parser.add_argument("--plot", action="store_true",
                     help="Plot training results.")
-    parser.add_argument("--reward_smooth_w", type=int, default=32,
+    parser.add_argument("--reward_smooth_w", type=int, default=16,
                     help="Window size for reward smoothing plot.")
     parser.add_argument("--policy", default="naive",
-                    help="Policy to use (e.g., naive, dqn) .")
+                    help="Policy to use (e.g., naive, dqn, primal) .")
 
+    pd_args = parser.add_argument_group("Primal-Dual")
+    pd_args.add_argument("--kappa", type=float, default=2,
+                    help="Kappa value used in Primal-Dual Urban algorithm.")
+
+    # Set 
 
     args = parser.parse_args()
     main(args)

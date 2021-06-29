@@ -47,7 +47,7 @@ class DemandNode(Node):
         super().__init__(inv_prods, loc)
 
 class Inventory:
-    def __init__(self, inv_prods: list):
+    def __init__(self, inv_prods: list = None):
         self._inv_dict = {}
         # Number of items currently in inventory
         self._inv_size = 0
@@ -100,7 +100,8 @@ class Inventory:
     
     def items(self):
         for sku_id, quantity in self._inv_dict.items(): 
-            yield InventoryProduct(sku_id, quantity)
+            if quantity > 0:
+                yield InventoryProduct(sku_id, quantity)
 
 
 class InventoryNode(Node):
@@ -127,14 +128,13 @@ class InventoryNodeManager:
 
             # Add its inventory to the overall inventory
             for sku_id in inv_node.inv.sku_ids:
-                # print(f"sku_id {sku_id} with {inv_node.inv.product_quantity(sku_id)}")
                 inv_quantity = inv_node.inv.product_quantity(sku_id)
                 if inv_quantity > 0:
                     inv_prods.append(
                         InventoryProduct(
                             sku_id,
                             inv_quantity))
-        
+
         self._inv = Inventory(inv_prods)
 
     @property
@@ -147,24 +147,27 @@ class InventoryNodeManager:
     @property
     def sku_ids(self):
         return self._inv.keys()
-    
+
     @property
     def inv(self):
         return self._inv
 
     def product_quantity(self, sku_id: int) -> int:
         return self._inv.product_quantity(sku_id)
-        
-    
+
     def add_product(self, inv_node_id: int, inv_prod: InventoryProduct):
         self._inv_nodes_dict[inv_node_id].inv.add_product(inv_prod)
         self._inv.add_product(inv_prod)
 
     def remove_product(self, inv_node_id: int, inv_prod: InventoryProduct):
         self._inv_nodes_dict[inv_node_id].inv.remove_product(inv_prod)
-
         self._inv.remove_product(inv_prod)
 
+    def empty(self):
+        """Empty all the stock from all the invetory nodes."""
+        for inv_node_id, inv_node in self._inv_nodes_dict.items():
+            for inv_prod in inv_node.inv.items():
+                self.remove_product(inv_node_id, inv_prod)
 
 class Simulator:
     def __init__(self, args, policy):
@@ -209,8 +212,13 @@ class Simulator:
         self._inv_node_man = InventoryNodeManager(self._inv_nodes)
 
     def _reset(self):
+        # Empty the inventory
+        self._inv_node_man.empty()
+
+        # Restock the inventory in the inventory nodes
         self._restock_inv()
-        # Tell the policy it is over
+
+        # Reset policy for new episode
         self._policy.reset()
 
     def _gen_inv_node(self, loc: Location = None) -> InventoryNode:
@@ -234,6 +242,7 @@ class Simulator:
             inv_prods.append(InventoryProduct(i, rand_quant))
 
         return inv_prods
+
 
     def _restock_inv(self):
         for i in range(self.args.num_inv_nodes):
@@ -330,22 +339,23 @@ class Simulator:
 
             # Reset the simulator for the next episode
             self._reset()
-
+            
             if len(rewards) == 0:
                 continue
 
             reward_avg = sum(rewards) / len(rewards)
             print("reward_avg", reward_avg)
             self._train_dict["ep_reward_avgs"].append(reward_avg)
-                        
+
             # Train if this is a trainable policy
             if self._policy.is_trainable and self._policy.is_train_ready():
                 loss = self._policy.train()                
-                
+
                 self._train_dict["policy_losses"].append(loss)
 
         if self._policy.is_trainable:
             self._policy.save()
+
         self._save()
         if self.args.plot:
             self.plot_results()

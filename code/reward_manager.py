@@ -9,7 +9,9 @@ class RewardManager:
                     inv_node: InventoryNode,
                     demand_node: DemandNode,
                     fulfill_plan: FulfillmentPlan):
-
+        """Get current reward.
+            NOTE: This is called before the fulfillment decision in a timestep.
+        """
         inv_fulfill = fulfill_plan.get_fulfillment(inv_node.inv_node_id)
         dist = inv_node.loc.get_distance(demand_node.loc)
 
