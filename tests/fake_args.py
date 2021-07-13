@@ -16,7 +16,13 @@ class FakeArgs:
         self.per_beta = 0.4
         self.per_alpha = 0.6
         self.eps = 1e-6
-        self.cord_bounds = 10
+        self.coord_bounds = 10
         self.min_inv_prod = 1
         self.max_inv_prod = 1
         self.kappa = 2
+        self.loc_json = "fake_loc.json"
+        self.policy = "naive"
+        self.policy_dir = "fake_policy_dir"
+        self.eval_episodes = 2
+        self.critic_lam = 0.5
+        self.gae_lam = 0.95

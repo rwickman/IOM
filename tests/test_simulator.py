@@ -29,8 +29,8 @@ class TestSimulator(unittest.TestCase):
         self.sim = Simulator(self.args, None)
 
     def test_gen_inv_node(self):
-        fake_cords = Cordinates(0, 0)
-        fake_loc = Location(fake_cords)
+        fake_coords = Coordinates(0, 0)
+        fake_loc = Location(fake_coords)
         expected_id = len(self.sim._inv_nodes)
         inv_node = self.sim._gen_inv_node(fake_loc)
 
@@ -43,13 +43,13 @@ class TestSimulator(unittest.TestCase):
 
     def test_rand_loc(self):
         loc = self.sim._rand_loc()
-        self.assertTrue(loc.cords.x >= -self.args.cord_bounds and loc.cords.x <= self.args.cord_bounds)
-        self.assertTrue(loc.cords.y >= -self.args.cord_bounds and loc.cords.y <= self.args.cord_bounds)
+        self.assertTrue(loc.coords.x >= -self.args.coord_bounds and loc.coords.x <= self.args.coord_bounds)
+        self.assertTrue(loc.coords.y >= -self.args.coord_bounds and loc.coords.y <= self.args.coord_bounds)
 
-        self.args.cord_bounds = 0
+        self.args.coord_bounds = 0
         loc = self.sim._rand_loc()
-        self.assertEqual(loc.cords.x, 0)
-        self.assertEqual(loc.cords.y, 0)
+        self.assertEqual(loc.coords.x, 0)
+        self.assertEqual(loc.coords.y, 0)
 
     def test_gen_inv_node_stock(self):
         inv_prods = self.sim._gen_inv_node_stock()
