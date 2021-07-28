@@ -3,6 +3,8 @@ import argparse
 from simulator import Simulator
 from naive_policy import NaivePolicy
 from dqn_policy import DQNTrainer
+from dqn_emb_policy import DQNEmbTrainer
+from dqn_att_policy import DQNAttTrainer
 from actor_critic_policy import ActorCriticPolicy
 from primal_dual_policy import PrimalDual
 from reward_manager import RewardManager
@@ -29,6 +31,10 @@ def main(args):
                 args.policy = args.policy + "_no_per"
 
             policy = DQNTrainer(args, reward_man)
+        elif args.policy == "dqnatt":
+            policy = DQNAttTrainer(args, reward_man)
+        elif "dqn_emb" in args.policy:
+            policy = DQNEmbTrainer(args, reward_man)
         elif args.policy == "ac":
             policy = ActorCriticPolicy(args, reward_man)
         else:
@@ -42,29 +48,57 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Run a fulfillment simulation.')
-    parser.add_argument('--coord_bounds', type=int, default=10,
+
+    sim_args = parser.add_argument_group("Simulator")
+    sim_args.add_argument("--demand_beta_a", type=float, default=0.1,
+                    help="a parameter value used in the beta distribution to generate demand around a city.")
+    sim_args.add_argument("--demand_beta_b", type=float, default=1.0,
+                    help="b parameter value used in the beta distribution to generate demand around a city.")
+    sim_args.add_argument("--city_radius", type=float, default=4,
+                    help="Radius of the given city such that demand is generated.")
+    sim_args.add_argument("--city_loc", default=None,
+                    help="JSON city locations.")
+    sim_args.add_argument("--inv_loc", default=None,
+                    help="JSON containing location coordinates for every inventory node.")
+    sim_args.add_argument("--ramp_max_prod", action="store_true",
+                    help="Slowly ramp up max inventory of SKUs at inventory nodes.")
+    sim_args.add_argument("--ramp_eps", type=int, default=256,
+                    help="Amount of episodes till max inventory of SKUs at inventory nodes can be generated.")
+    sim_args.add_argument("--rand_max_prod", action="store_true",
+                    help="Before each episode randomly generate max inventory per SKU for every inventory node between [1, max_inv_prod].")
+    sim_args.add_argument('--coord_bounds', type=int, default=10,
                     help='Max bounds for coordinates.')
-    parser.add_argument("--num_skus", type=int, default=2,
+    sim_args.add_argument("--num_skus", type=int, default=2,
                     help="Number of unique products SKUs.")
-    parser.add_argument("--max_inv_prod", type=int, default=20,
+    sim_args.add_argument("--max_inv_prod", type=int, default=10,
                     help="Max inventory for each product across all inventory nodes.")
-    parser.add_argument("--min_inv_prod", type=int, default=1,
+    sim_args.add_argument("--min_inv_prod", type=int, default=0,
                     help="Min inventory for each product across all inventory nodes.")
-    parser.add_argument("--num_inv_nodes", type=int, default=2,
+    sim_args.add_argument("--num_inv_nodes", type=int, default=2,
                     help="Number of inventory nodes.")
-    parser.add_argument("--demand_lam", type=float, default=1.0,
+    sim_args.add_argument("--demand_lam", type=float, default=1.0,
                     help="Lambda parameter for sampling demand from demand poisson distribution.")
-    parser.add_argument("--T_max", type=int, default=128,
-                    help="Max number of orders")
+    sim_args.add_argument("--order_line_lam", type=float, default=1.0,
+                    help="Lambda parameter for sampling the number of order lines (i.e., SKUs) from poisson distribution.")
+    sim_args.add_argument("--inv_sku_lam", type=float, default=None,
+                    help="Lambda parameter for sampling the number of SKUs at inventory node from poisson distribution.")
+    sim_args.add_argument("--rand_inv_sku_lam", action="store_true",
+                    help="Use a random sku lamabda value for each epsiode between [1, num_skus] (this overrides inv_sku_lam).",)
+    
+    sim_args.add_argument("--order_max", type=int, default=256,
+                    help="Max number of orders in an episode during training.")
+    sim_args.add_argument("--eval_order_max", type=int, default=None,
+                    help="Max number of orders in an episode during evaluation.")
+
     parser.add_argument("--reward_alpha", type=float, default=0.5,
                     help="Reward item discount.")
-    parser.add_argument("--emb_size", type=int, default=256,
-                    help="Embedding size.")
-    parser.add_argument("--hidden_size", type=int, default=256,
+    parser.add_argument("--hidden_size", type=int, default=128,
                     help="Number of hidden units used for NN policy.")
-    parser.add_argument("--epsilon", type=float, default=0.9,
+    parser.add_argument("--num_hidden", type=int, default=2,
+                    help="Number of hidden layers for NN policy.")
+    parser.add_argument("--epsilon", type=float, default=0.95,
                     help="Initial epsilon used for epsilon-greedy in DQN.")
-    parser.add_argument("--min_epsilon", type=float, default=0.05,
+    parser.add_argument("--min_epsilon", type=float, default=0.01,
                     help="Minimum epsilon value used for epsilon-greedy in DQN.")
     parser.add_argument("--epsilon_decay", type=int, default=1024,
                     help="Epsilon decay step.")
@@ -72,16 +106,15 @@ if __name__ == "__main__":
                     help="Learning rate used for DRL models.")
     parser.add_argument("--lr_gamma", type=float, default=0.999,
                     help="Learning rate decay factor.")
-    parser.add_argument("--min_lr", type=float, default=1e-6,
+    parser.add_argument("--min_lr", type=float, default=5e-6,
                     help="Minimum learning rate.")
     parser.add_argument("--no_lr_decay", action="store_true",
-                    help="Don't use lr decau.")
+                    help="Don't use lr decay.")
     parser.add_argument("--max_grad_norm", type=float, default=2.0,
                     help="Maximum gradient norm.")
     parser.add_argument("--batch_size", type=int, default=32,
                     help="Batch size used for training.")
-    parser.add_argument("--mem_cap", type=int, default=100000,
-                    help="Replay memory capacity.")
+
     parser.add_argument("--gamma", type=float, default=0.99,
                     help="Gamma value for discounting reward.")
     parser.add_argument("--gae_lam", type=float, default=0.95,
@@ -91,28 +124,43 @@ if __name__ == "__main__":
     parser.add_argument("--save_dir", default="models",
                     help="Directory to save the models.")
     parser.add_argument("--load", action="store_true",
-                    help="Load saved models.")
-    parser.add_argument("--no_per", action="store_true",
-                    help="Don't use Prioritized Experience Replay (PER) for DQN model.")
-    parser.add_argument("--per_beta", type=float, default=0.4,
-                    help="Beta used for proportional priority.")
-    parser.add_argument("--eps", type=float, default=1e-16,
-                    help="Epsilon used for proportional priority.")
-    parser.add_argument("--per_alpha", type=float, default=0.6,
-                    help="Alpha used for proportional priority.")
-    parser.add_argument("--tgt_update_step", type=int, default=5,
-                    help="Number of training batches before target is updated.")
+                    help="Load saved models and arguments.")
+    parser.add_argument("--load_arg_keys", nargs="*",
+                    default=["hidden_size", "emb_size", "num_hidden", "dff", "num_heads", "num_enc_layers"],
+                    help="Arguemnts to load when loading model.")
+
     parser.add_argument("--plot", action="store_true",
                     help="Plot training results.")
     parser.add_argument("--reward_smooth_w", type=int, default=32,
                     help="Window size for reward smoothing plot.")
     parser.add_argument("--policy", default="naive",
                     help="Policy to use (e.g., naive, dqn, primal) .")
-    parser.add_argument("--loc_json", default=None,
-                    help="JSON containing location coordinates for every inventory node.")
+    parser.add_argument("--train_iter", type=int, default=1,
+                    help="Number of train interations after each episode.")
+            
+
+
+
+    dqn_args = parser.add_argument_group("DQN")
+    dqn_args.add_argument("--emb_size", type=int, default=64,
+        help="Number of transformer encoder and decoder layers.")
+    dqn_args.add_argument("--no_per", action="store_true",
+                    help="Don't use Prioritized Experience Replay (PER) for DQN model.")
+    dqn_args.add_argument("--per_beta", type=float, default=0.4,
+                    help="Beta used for proportional priority.")
+    dqn_args.add_argument("--eps", type=float, default=1e-9,
+                    help="Epsilon used for proportional priority.")
+    dqn_args.add_argument("--per_alpha", type=float, default=0.6,
+                    help="Alpha used for proportional priority.")
+    dqn_args.add_argument("--tgt_update_step", type=int, default=6,
+                    help="Number of training batches before target is updated.")
+    dqn_args.add_argument("--mem_cap", type=int, default=65536,
+                    help="Replay memory capacity.")
+
+
 
     pd_args = parser.add_argument_group("Primal-Dual")
-    pd_args.add_argument("--kappa", type=float, default=2,
+    pd_args.add_argument("--kappa", type=float, default=0.25,
                     help="Kappa value used in Primal-Dual Urban algorithm.")
 
     eval_args = parser.add_argument_group("Evaluation")
@@ -137,11 +185,11 @@ if __name__ == "__main__":
                     help="Padding around fulfillment grid for information to fit.")
     
     ac_args = parser.add_argument_group("Actor Critic")
-    ac_args.add_argument("--noptepochs", type=int, default=1,
+    ac_args.add_argument("--ac_epochs", type=int, default=1,
                     help="Number of epochs to train batch of episodes")
     ac_args.add_argument("--critic_lam", type=float, default=0.5,
                     help="Critic loss weighting")
-    ac_args.add_argument("--min_exps", type=int, default=512,
+    ac_args.add_argument("--min_exps", type=int, default=1024,
                     help="The minimum number of timesteps to run before training over stored experience.")
     ac_args.add_argument("--ppo_clip", type=float, default=0.2,
                     help="PPO surrogate loss clipping.")
@@ -149,5 +197,18 @@ if __name__ == "__main__":
                     help="Use vanilla policy gradient loss for actor-critic policy.")
     ac_args.add_argument("--reward_scale_factor", type=float, default=0.01,
                     help="Reward scaling factor that may helps the policy learn faster.")
+    
+    tran_args = parser.add_argument_group("Transformer")
+    tran_args.add_argument("--num_enc_layers", type=int, default=2,
+        help="Number of transformer encoder and decoder layers.")
+    tran_args.add_argument("--num_heads", type=int, default=4,
+        help="Number attention heads.")
+    tran_args.add_argument("--max_pos_enc", type=int, default=10000,
+        help="Maximum positional encoding for encoder.")
+    tran_args.add_argument("--drop_rate", type=float, default=0.05,
+        help="Dropout rate.")
+    parser.add_argument("--dff", type=int, default=128,
+        help="Number of units in the pointwise FFN .")
+    
     args = parser.parse_args()
     main(args)

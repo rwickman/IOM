@@ -3,7 +3,8 @@ Implementation of a primal–dual algorithm for online order
 fulfillment with multiproduct orders from the paper
 Primal–Dual Algorithms for Order Fulfillment at Urban Outfitters, Inc.
 """
-import numpy as np
+import os
+import torch
 
 from reward_manager import RewardManager
 from fulfillment_plan import FulfillmentPlan
@@ -13,17 +14,21 @@ from simulator import InventoryNode, DemandNode, InventoryProduct
 class PrimalDual(Policy):
     def __init__(self, args, reward_man: RewardManager):
         super().__init__(args, True)
+
         self._reward_man = reward_man
+        self._model_file = os.path.join(self.args.save_dir, "dual_lams.pt")
 
-        # Initialize dual variables
-        self._dual_lams = np.zeros((self.args.num_inv_nodes, self.args.num_skus))
-
+        if self.args.load:
+            self.load()
+        else:
+            # Initialize dual variables
+            self._dual_lams = torch.zeros((self.args.num_inv_nodes, self.args.num_skus))
+            
         # Hyperparameters defined in the paper
-        self._alpha_1 = 1 / (1 + np.log(self.args.kappa))
-        self._alpha_2 = 0 
+        self._alpha_1 = 1 / (1 + torch.log(torch.tensor(self.args.kappa)))
+        self._alpha_2 = 0
         self._beta_bar = max(self.args.min_inv_prod, 1)
-        self._beta = self.args.kappa / ((1+ 1 / self._beta_bar) ** (self._beta_bar/self._alpha_1)  - 1)
-        
+        self._beta = self.args.kappa / ( (1 + 1 / self._beta_bar) ** (self._beta_bar/self._alpha_1)  - 1)
         self._init_inv = None
         self._exps = []
 
@@ -32,7 +37,7 @@ class PrimalDual(Policy):
             demand_node: DemandNode) -> PolicyResults:
         # Add initial inventory
         if self._init_inv is None:
-            self._init_inv = np.zeros((self.args.num_inv_nodes, self.args.num_skus))
+            self._init_inv = torch.zeros((self.args.num_inv_nodes, self.args.num_skus))
             # Create initial inventory vector
             for inv_node in inv_nodes:
                 for sku_id in range(self.args.num_skus):
@@ -90,7 +95,7 @@ class PrimalDual(Policy):
                 exps.append(
                     Experience(inv_prod.sku_id, best_inv_node_id, best_reward))
         
-        self._exps.extend(exps) 
+        self._exps.extend(exps)
          
         return PolicyResults(fulfill_plan, exps)
 
@@ -98,16 +103,28 @@ class PrimalDual(Policy):
         # Update the dual lambda values
         for exp in self._exps:
             denom = self._alpha_1 * max(self._init_inv[exp.action, exp.state], 1) + self._alpha_2
+            
             term_1 = self._dual_lams[exp.action, exp.state] * (1 + 1/denom)
             term_2 = self._beta * (exp.reward / denom)
-            self._dual_lams[exp.action, exp.state] = term_1 + term_2                       
+            self._dual_lams[exp.action, exp.state] = term_1 + term_2
+
+        # Reset the experiences
+        self._exps = []                   
+        self._init_inv = None    
 
     def is_train_ready(self) -> bool:
         return len(self._exps) > 0
 
     def save(self):
-        pass
+        print("SAVING")
+        model_dict = {
+            "dual_lams" : self._dual_lams
+        }
+        torch.save(model_dict, self._model_file)
+        
+    def load(self):
+        model_dict = torch.load(self._model_file)
+        self._dual_lams = model_dict["dual_lams"] 
 
     def reset(self):
-        self._init_inv = None
-        self._exps = []
+        pass
