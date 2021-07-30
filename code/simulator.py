@@ -4,6 +4,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import json
 import os
+import math
+from scipy.stats import beta
 
 # from policy import PolicyResults
 
@@ -104,9 +106,11 @@ class Inventory:
         return self._inv_dict.keys()
     
     def items(self):
-        for sku_id, quantity in self._inv_dict.items(): 
-            if quantity > 0:
-                yield InventoryProduct(sku_id, quantity)
+        inv_prods = [InventoryProduct(sku_id, quantity) for sku_id, quantity in self._inv_dict.items()]
+        inv_prods = sorted(inv_prods, key=lambda p: p.sku_id)
+        for inv_prod in inv_prods: 
+            if inv_prod.quantity > 0:
+                yield inv_prod
 
 
 class InventoryNode(Node):
@@ -185,6 +189,9 @@ class Simulator:
             "inv_node_coords" : []
         }
 
+        if self.args.city_loc:
+            self._city_locs = self._load_locs(self.args.city_loc)
+
         if policy:
             if not os.path.exists(self.args.save_dir):
                 os.mkdir(self.args.save_dir)
@@ -204,13 +211,12 @@ class Simulator:
         """Initialize the inventory nodes."""
         
         # Check if you want specific location coordinates
-        if self.args.loc_json:
-            with open(self.args.loc_json) as f:
-                inv_node_locs = self._load_locs()
-        
+        if self.args.inv_loc:
+            inv_node_locs = self._load_locs(self.args.inv_loc)
+
         self._inv_nodes = []
         for i in range(self.args.num_inv_nodes):        
-            if self.args.loc_json:                
+            if self.args.inv_loc:
                 inv_node = self._gen_inv_node(inv_node_locs[i])
             elif self.args.load:
                 # Create using saved location
@@ -231,6 +237,10 @@ class Simulator:
         self._inv_node_man = InventoryNodeManager(self._inv_nodes)
 
     def _reset(self):
+        # Check if inventory is still left
+        if self._inv_node_man.inv.inv_size > 0 and not self.args.eval:
+            self._policy.early_stop_handler()
+        
         # Empty the inventory
         self._inv_node_man.empty()
 
@@ -248,25 +258,69 @@ class Simulator:
         inv_node_id = len(self._inv_nodes)
 
         # Generate the inventory for this node
-        inv_prods = self._gen_inv_node_stock()
+        inv_prods = self._gen_inv_node_stock(self.args.max_inv_prod)
 
         return InventoryNode(inv_prods, loc, inv_node_id)
 
-    def _gen_inv_node_stock(self):
-        # Generate the inventory for this node
+    def _gen_inv_node_stock(self, max_inv_prod: int, inv_sku_lam: float = None):
+        """Generate the inventory for this node."""
         inv_prods = []
-        for i in range(self.args.num_skus):
+        
+        sku_ids = list(range(self.args.num_skus))
+
+        # Shuffle skus to allow choosing which SKU at least one and what SKUs get selected  
+        random.shuffle(sku_ids)
+
+        # Sample the number of skus
+        if inv_sku_lam:
+            num_skus = np.clip(np.random.poisson(inv_sku_lam), 1, self.args.num_skus)
+            sku_ids = sku_ids[:num_skus]
+        
+        for i, sku_id in enumerate(sku_ids):
+            if self.args.min_inv_prod == 0 and i == 0:
+                # Choose a sku to have at least 1 unit
+                min_inv_prod = 1
+            else:
+                min_inv_prod = self.args.min_inv_prod
+
+            if self.args.ramp_max_prod:
+                num_eps = len(self._train_dict["ep_avg_rewards"])
+                max_prod_scale = num_eps/self.args.ramp_eps
+                cur_max_inv_prod = int(max_prod_scale * max_inv_prod)
+            else:
+                cur_max_inv_prod = max_inv_prod
+
+            cur_max_inv_prod = max(max_inv_prod, 1.0)
+            
             # Generate a random quantity for this SKU
-            rand_quant = random.randint(self.args.min_inv_prod, self.args.max_inv_prod)
+            rand_quant = random.randint(min_inv_prod, cur_max_inv_prod)
+
             # Make product 
-            inv_prods.append(InventoryProduct(i, rand_quant))
+            if rand_quant > 0:
+                inv_prods.append(InventoryProduct(sku_id, rand_quant))
 
         return inv_prods
 
 
     def _restock_inv(self):
+
+        if self.args.rand_max_prod:
+            # Set the max inventory for all SKUs for every node
+            max_inv_prod = random.randint(1, self.args.max_inv_prod)
+        else:
+            max_inv_prod = self.args.max_inv_prod
+
+        # Get the inventory SKU lambda value
+        if self.args.rand_inv_sku_lam:
+            inv_sku_lam = random.uniform(1, self.args.num_skus)
+
+        elif self.args.inv_sku_lam:
+            inv_sku_lam = self.args.inv_sku_lam
+        else:
+            inv_sku_lam = None
+        
         for i in range(self.args.num_inv_nodes):
-            inv_prods = self._gen_inv_node_stock()
+            inv_prods = self._gen_inv_node_stock(max_inv_prod, inv_sku_lam)
             for inv_prod in inv_prods:
                 self._inv_node_man.add_product(i, inv_prod)
 
@@ -279,13 +333,22 @@ class Simulator:
             stock = [item for item in stock if item.quantity > 0]
         
         # Create random location
-        loc = self._rand_loc()
+        loc = self._gen_demand_loc()
+
+        # Sample the number of order lines
+        num_lines = np.random.poisson(self.args.order_line_lam)
+
+        # Clip to valid range
+        num_lines = np.clip(num_lines, 1, len(stock))
+
+        # Sample the SKUs
+        prods = np.random.choice(stock, size=num_lines, replace=False)
 
         # Choose a random sku_id to allow for at least one order
-        random.shuffle(stock)
+        random.shuffle(prods)
 
         inv_prods = []
-        for i, item in enumerate(stock):
+        for i, item in enumerate(prods):
             num_demand = np.random.poisson(self.args.demand_lam)
             # Make the demand for the first item at least one
             if i == 0:
@@ -295,15 +358,59 @@ class Simulator:
             num_demand = min(num_demand, item.quantity)
 
             inv_prods.append(InventoryProduct(item.sku_id, num_demand))
-              
+        
         return DemandNode(inv_prods, loc)
+
+
+    def _sample_circle_point(self):
+        """Generate a point on within a circle centered at (0,0).
+        
+        Args:
+            radius: the radius of the given circle.
+        """
+
+        
+        # Generate point on perimeter
+        theta = random.random() * 2 * math.pi
+        
+        # Generate radius
+        r = self.args.city_radius * beta.rvs(self.args.demand_beta_a, self.args.demand_beta_a) ** 0.5 
+        
+        # Get points based on polar coordinates
+        x = r * math.cos(theta)
+        y = r * math.sin(theta)
+
+        return x, y
 
     def _rand_loc(self) -> Location:
         rand_x = random.uniform(-self.args.coord_bounds, self.args.coord_bounds)
         rand_y = random.uniform(-self.args.coord_bounds, self.args.coord_bounds)
         coords = Coordinates(rand_x, rand_y)
-        loc = Location(coords)
-        return loc
+        return Location(coords)
+
+    def _gen_demand_loc(self):
+        if self.args.city_loc:
+            # Perform rejection sampling to generate point that remains inside grid bounds
+            while True:
+                # Generate a point on a circle centered at (0,0)
+                x, y = self._sample_circle_point()
+
+                # Sample the city
+                rand_city_loc = random.sample(self._city_locs, 1)[0]
+
+                # Shift the coords to make it centered at sampled city center
+                demand_coords = Coordinates(
+                                        x + rand_city_loc.coords.x,
+                                        y + rand_city_loc.coords.y)
+
+                # Check if it is within the bounds of the given grid
+                if demand_coords.x >= -self.args.coord_bounds  \
+                    and demand_coords.x <= self.args.coord_bounds  \
+                    and demand_coords.y >= -self.args.coord_bounds  \
+                    and demand_coords.y <= self.args.coord_bounds:
+                    return Location(demand_coords)
+        else:
+            return self._rand_loc()
 
     def _save(self):
         with open(self._train_file, "w") as f:
@@ -313,20 +420,19 @@ class Simulator:
         if not os.path.exists(self._train_file):
             raise Exception(f"Cannot load because train file {self._train_file} does not exists.")
         with open(self._train_file) as f:
-            self._train_dict = json.load(f)        
+            self._train_dict = json.load(f)
 
-    def _load_locs(self):
+
+    def _load_locs(self, loc_json):
         """Load inventory node locations."""
         inv_locs = []
-        with open(self.args.loc_json) as f:
+        with open(loc_json) as f:
             coords_list = json.load(f)
             for coords in coords_list:
                 loc = Location(Coordinates(coords[0], coords[1]))
                 inv_locs.append(loc)
         
         return inv_locs
-
-
 
     def plot_results(self):
         def moving_average(x):
@@ -362,7 +468,7 @@ class Simulator:
     def run(self):
         for e_i in range(self.args.episodes):
             rewards = []
-            for t in range(self.args.T_max):
+            for t in range(self.args.order_max):
                 if self._inv_node_man.inv.inv_size <= 0:
                     break
 
@@ -372,7 +478,7 @@ class Simulator:
                 policy_results = self._policy(self._inv_nodes, demand_node)
 
                 self.remove_products(policy_results)
-        
+                
                 rewards.extend(
                     [exp.reward for exp in policy_results.exps])
 
@@ -381,15 +487,17 @@ class Simulator:
             
             if len(rewards) == 0:
                 continue
-
-            avg_reward = (sum(rewards) / len(rewards)) * ((2 * self.args.coord_bounds) **2)
-            print("avg_reward", avg_reward)
+            
+            # Compute the average reward over the episode
+            avg_reward = (sum(rewards) / len(rewards)) #* (2 * self.args.coord_bounds)
+            print(e_i, "avg_reward", avg_reward, t)
 
             self._train_dict["ep_avg_rewards"].append(avg_reward)
 
             # Train if this is a trainable policy
             if self._policy.is_trainable and self._policy.is_train_ready():
-                loss = self._policy.train()                
+                for i in range(self.args.train_iter):
+                    loss = self._policy.train()
 
                 self._train_dict["policy_losses"].append(loss)
 

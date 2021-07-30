@@ -12,6 +12,7 @@ class Experience:
     action: int
     reward: float
     next_state: torch.Tensor = None
+    is_expert: bool = False
 
 @dataclass
 class PolicyResults:
@@ -43,4 +44,7 @@ class Policy:
                 cur_args_dict[key] = val
 
     def reset(self):
+        pass
+
+    def early_stop_handler(self):
         pass        

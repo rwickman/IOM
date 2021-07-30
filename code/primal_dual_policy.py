@@ -12,17 +12,21 @@ from policy import PolicyResults, Policy, Experience
 from simulator import InventoryNode, DemandNode, InventoryProduct
 
 class PrimalDual(Policy):
-    def __init__(self, args, reward_man: RewardManager):
+    def __init__(self, args, reward_man: RewardManager, is_expert=False):
         super().__init__(args, True)
-
         self._reward_man = reward_man
-        self._model_file = os.path.join(self.args.save_dir, "dual_lams.pt")
+        self._is_expert = is_expert
 
-        if self.args.load:
+        if self._is_expert:
+            self._model_file = os.path.join(self.args.expert_dir, "dual_lams.pt")
             self.load()
         else:
-            # Initialize dual variables
-            self._dual_lams = torch.zeros((self.args.num_inv_nodes, self.args.num_skus))
+            self._model_file = os.path.join(self.args.save_dir, "dual_lams.pt")
+            if self.args.load:
+                self.load()
+            else:
+                # Initialize dual variables
+                self._dual_lams = torch.zeros((self.args.num_inv_nodes, self.args.num_skus))
             
         # Hyperparameters defined in the paper
         self._alpha_1 = 1 / (1 + torch.log(torch.tensor(self.args.kappa)))
@@ -94,8 +98,9 @@ class PrimalDual(Policy):
                 # Create experience, using SKU ID as state
                 exps.append(
                     Experience(inv_prod.sku_id, best_inv_node_id, best_reward))
-        
-        self._exps.extend(exps)
+
+        if not self._is_expert and not self.args.eval:
+            self._exps.extend(exps)
          
         return PolicyResults(fulfill_plan, exps)
 

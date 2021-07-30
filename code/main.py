@@ -35,10 +35,12 @@ def main(args):
             policy = DQNAttTrainer(args, reward_man)
         elif "dqn_emb" in args.policy:
             policy = DQNEmbTrainer(args, reward_man)
-        elif args.policy == "ac":
+        elif "ac" in args.policy:
             policy = ActorCriticPolicy(args, reward_man)
-        else:
+        elif args.policy == "primal":
             policy = PrimalDual(args, reward_man)
+        else:
+            raise Exception("Invalid policy name.")
 
         # Create the simulator
         sim = Simulator(args, policy)
@@ -136,9 +138,18 @@ if __name__ == "__main__":
     parser.add_argument("--policy", default="naive",
                     help="Policy to use (e.g., naive, dqn, primal) .")
     parser.add_argument("--train_iter", type=int, default=1,
-                    help="Number of train interations after each episode.")
-            
-
+                    help="Number of train steps after each episode.")
+    
+    
+    imit_args = parser.add_argument_group("Imitation Learning")
+    imit_args.add_argument("--expert_pretrain", type=int, default=0,
+                    help="Number of train steps to pretrain and collected experiences using expert (e.g., expert_pretrain/train_iter number of episodes).")
+    imit_args.add_argument("--expert_dir", default=None,
+                    help="Directory of the expert agent, if not specified imitation learning will not be used.")
+    imit_args.add_argument("--expert_margin", type=float, default=0.1,
+                    help="Margin value used for expert margin classification loss.")                
+    imit_args.add_argument("--expert_lam", type=float, default=0.01,
+                    help="Weight of the expert margin classification loss.")
 
 
     dqn_args = parser.add_argument_group("DQN")
@@ -152,12 +163,14 @@ if __name__ == "__main__":
                     help="Epsilon used for proportional priority.")
     dqn_args.add_argument("--per_alpha", type=float, default=0.6,
                     help="Alpha used for proportional priority.")
-    dqn_args.add_argument("--tgt_update_step", type=int, default=6,
+    dqn_args.add_argument("--tgt_update_step", type=int, default=1,
                     help="Number of training batches before target is updated.")
     dqn_args.add_argument("--mem_cap", type=int, default=65536,
                     help="Replay memory capacity.")
-
-
+    dqn_args.add_argument("--dqn_steps", type=int, default=1,
+                    help="Number of steps to use for multistep DQN.")
+    dqn_args.add_argument("--tgt_tau", type=float, default=0.01,
+                    help="The tau value to control the update rate of the target DQN parameters.")
 
     pd_args = parser.add_argument_group("Primal-Dual")
     pd_args.add_argument("--kappa", type=float, default=0.25,

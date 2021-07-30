@@ -11,6 +11,7 @@ from fulfillment_plan import FulfillmentPlan
 from policy import PolicyResults, Policy, Experience
 from rl_policy import RLPolicy
 from transformer import Encoder, Decoder
+from shared_models import DemandEncoder, InvEncoder 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -53,6 +54,15 @@ class ExpBuffer:
         self.val_preds = torch.tensor(self.val_preds).to(device)
         # print(self.states, self.rewards, self.actions, self.actor_preds, self.val_preds)
 
+    def pop(self):
+        """Pop the last state."""
+        self.states.pop()
+        self.actions.pop()
+        self.rewards.pop()
+        self.next_states.pop()
+        self.val_preds.pop()
+        self.actor_preds.pop()
+
     def clear(self):
         self.ep_reset = True
         self.states = []
@@ -65,8 +75,7 @@ class ExpBuffer:
 
 class ActorCriticPolicy(RLPolicy):
     def __init__(self, args, reward_man: RewardManager):
-        super().__init__(args)
-        self._reward_man = reward_man
+        super().__init__(args, reward_man)
 
         self._model_file = os.path.join(
             self.args.save_dir, "actor_critic_model.pt")
@@ -93,11 +102,8 @@ class ActorCriticPolicy(RLPolicy):
         if argmax:
             return actor_pred.argmax()
         else:
-            # TODO: See if this is the source of the problem
-            
             action_distr = Categorical(actor_pred)
             action = action_distr.sample()
-            #print("actor_pred", actor_pred, "action", action)
 
         return int(action)
 
@@ -106,10 +112,10 @@ class ActorCriticPolicy(RLPolicy):
             actor_pred, val_pred = self._actor_critic(state)
             self._exp_buffer.add_val_pred(val_pred)
             self._exp_buffer.add_actor_pred(actor_pred)
+
         return actor_pred
 
     def is_train_ready(self) -> bool:
-        # TODO: FIx this to be a set number
         return len(self._exp_buffer.states) > self.args.min_exps
 
     def save(self):
@@ -123,7 +129,7 @@ class ActorCriticPolicy(RLPolicy):
         torch.save(model_dict, self._model_file)
 
     def load(self):
-        model_dict = torch.load(self._model_file)
+        model_dict = torch.load(self._model_file, map_location=device)
         self._actor_critic.load_state_dict(model_dict["actor_critic"])
         self._optim.load_state_dict(model_dict["optimizer"])
         self._lr_scheduler.load_state_dict(model_dict["lr_scheduler"])
@@ -208,10 +214,14 @@ class ActorCriticPolicy(RLPolicy):
         self._optim.step()
 
         # Check if using decay and min lr not reached
-        print("LR", self._optim.param_groups[0]["lr"])
-        if not self.args.no_lr_decay and self._optim.param_groups[0]["lr"] > self.args.min_lr:
-            # If so, decay learning rate
-            self._lr_scheduler.step()
+        # print("LR", self._optim.param_groups[0]["lr"])
+        # 
+        if not self.args.no_lr_decay: 
+            if self._optim.param_groups[0]["lr"] > self.args.min_lr:
+                # If so, decay learning rate
+                self._lr_scheduler.step()
+            else:
+                self._optim.param_groups[0]["lr"] = self.args.min_lr
 
     def vanilla_pg_loss(self,
                     actor_pred: torch.Tensor,
@@ -253,7 +263,6 @@ class ActorCriticPolicy(RLPolicy):
         # Get new and old log probability 
         old_log_prob = old_actor_distr.log_prob(actions.flatten())
 
-        #new_prob = new_actor_pred.gather(1, actions).view(-1)
         new_log_prob = new_actor_distr.log_prob(actions.flatten())
 
         # Compute ratio
@@ -307,6 +316,10 @@ class ActorCriticPolicy(RLPolicy):
 
             return returns, advs, tdlamret
 
+    def early_stop_handler(self):
+        """Handle early termination of this episode."""
+        self._exp_buffer.pop()
+
     def reset(self):
         """Reset policy for next episode."""
         self._exp_buffer.ep_reset = True
@@ -330,43 +343,6 @@ class ActorCriticPolicy(RLPolicy):
             self._exp_buffer.add_exp(exp)
 
         return results
-
-# class ActorCritic(nn.Module):
-#     def __init__(self, args, inp_size: int):
-#         super().__init__()
-#         self.args = args
-#         self.inp_size = inp_size
-#         self.action_dim = self.args.num_inv_nodes
-
-#         # Model parameters
-#         print("self.args.hidden_size", self.args.hidden_size)
-#         self._fc_1 = nn.Linear(self.inp_size, self.args.hidden_size)
-        
-#         self._fc_2 = nn.Linear(self.args.hidden_size, self.args.hidden_size)
-
-#         self._fc_3 = nn.Linear(self.inp_size, self.args.hidden_size)
-        
-#         self._fc_4 = nn.Linear(self.args.hidden_size, self.args.hidden_size)
-
-#         self._actor_out = nn.Linear(self.args.hidden_size, self.action_dim)
-
-#         self._critic_out = nn.Linear(self.args.hidden_size, 1)
-
-#     def __call__(self, state):
-#         x = F.relu(self._fc_1(state))
-#         x = F.relu(self._fc_2(x))
-#         actor_out = self._actor_out(x)
-#         # print("actor_out", actor_out)
-#         actor_pred = F.softmax(actor_out, dim=-1)
-#         #print("actor_pred", actor_pred)
-#         x = F.relu(self._fc_3(state))
-#         x = F.relu(self._fc_4(x))
-
-
-#         val_pred = self._critic_out(x)
-
-#         return actor_pred, val_pred
-
 
 
 class ActorCritic(nn.Module):
@@ -442,7 +418,6 @@ class ActorCritic(nn.Module):
         # Get inventory mask
         non_zero_items = item_hot.nonzero(as_tuple=True)
         inv_mask = 1 - (inv[non_zero_items[0], :, non_zero_items[1]] > 0).int()
-
         
         item_hot = item_hot.unsqueeze(1)
         demand = demand.unsqueeze(1)
@@ -479,73 +454,3 @@ class ActorCritic(nn.Module):
             actor_pred = actor_pred.view(-1)
         return actor_pred, critic_pred
 
-
-
-class DemandEncoder(nn.Module):
-    def __init__(self, args):
-        super().__init__()
-        self.args = args
-        
-        # Cur item demand + total demand + loc
-        self.demand_inp_size = 1 + 1 + 2
-        self._demand_emb_fc_1 = nn.Linear(self.demand_inp_size , self.args.emb_size)
-        self._demand_emb_fc_2 = nn.Linear(self.args.emb_size, self.args.emb_size)
-    
-    def forward(self,
-                demand: torch.tensor,
-                demand_loc: torch.tensor,
-                item_hot: torch.tensor):
-        # Get the total sum of demand that is requested
-        demand_totals = demand.sum(axis=-1)
-
-        # Get demand for current item only
-        demand_quantity = (item_hot * demand).sum(axis=-1)
-        demand_inp = torch.cat((demand_totals, demand_quantity, demand_loc), -1).unsqueeze(1)
-        demand_embs = F.relu(
-            self._demand_emb_fc_1(demand_inp))
-        demand_embs = self._demand_emb_fc_2(demand_embs)
-
-        return demand_embs
-
-class InvEncoder(nn.Module):
-    def __init__(self, args):
-        super().__init__()
-        self.args = args
-        # Total Fulfill + cur item quantity + total stock + loc
-        self.inv_inp_size = 1 + 1 + 1 + 1 + 2
-
-        # self.inv_inp_size + cur item quantity + total demand quantity left  
-        
-        self._inv_emb_fc_1 = nn.Linear(self.inv_inp_size, self.args.emb_size)
-        self._inv_emb_fc_2 = nn.Linear(self.args.emb_size, self.args.emb_size)
-
-    def forward(self, 
-                inv: torch.Tensor,
-                inv_locs: torch.Tensor,
-                demand: torch.Tensor,
-                cur_fulfill: torch.Tensor,
-                item_hot:torch.Tensor):
-        """Get inventory embedding from node info."""
-        batch_size = demand.shape[0]
-        # Get total amount of inventory
-        inv_totals = inv.sum(axis = -1).unsqueeze(2)
-
-        # Get total number of items currently getting fulfilled in the order
-        cur_fulfill_totals = cur_fulfill.sum(axis=-1).unsqueeze(2)
-        
-        # Get quantity of current item
-        cur_item_quantity = (item_hot * inv).sum(axis=-1).unsqueeze(2)
-
-        # Get number of items similar
-        num_potential_fulfill = torch.min(
-            inv, demand.repeat(1, inv.shape[1], 1))
-
-        num_potential_fulfill = num_potential_fulfill.sum(axis=-1).unsqueeze(2)
-
-        # Get inventory node embedding
-        inv_inp = torch.cat((cur_fulfill_totals, cur_item_quantity, inv_totals, inv_locs, num_potential_fulfill), axis=-1)
-
-        inv_embs = F.relu(self._inv_emb_fc_1(inv_inp))
-        inv_embs = self._inv_emb_fc_2(inv_embs)
-        
-        return inv_embs

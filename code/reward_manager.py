@@ -5,7 +5,7 @@ class RewardManager:
     def __init__(self, args):
         self.args = args
         # Reward scaling factor to make learning easier as large values take longer to converge
-        self._reward_scale_factor = 1/((2 * self.args.coord_bounds) **2)
+        self._reward_scale_factor = 1/((2 * self.args.coord_bounds) ** 2)
 
     def get_reward(self,
                     inv_node: InventoryNode,
