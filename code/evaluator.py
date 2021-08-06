@@ -162,9 +162,6 @@ class Evaluator:
                         elif "ac" in train_dict["policy_name"]:
                             policies[train_dict["policy_name"]] = ActorCriticPolicy(self.args, self.reward_man)
                             policies[train_dict["policy_name"]]._actor_critic.eval()
-                        elif train_dict["policy_name"] == "dqnatt":
-                            policies[train_dict["policy_name"]] = DQNAttTrainer(self.args, self.reward_man)
-                            policies[train_dict["policy_name"]]._dqn.eval()
                         elif "dqn_emb" in train_dict["policy_name"]:
                             policies[train_dict["policy_name"]] = DQNEmbTrainer(self.args, self.reward_man)
                             policies[train_dict["policy_name"]]._dqn.eval()

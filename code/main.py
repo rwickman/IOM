@@ -30,8 +30,6 @@ def main(args):
                 args.policy = args.policy + "_no_per"
 
             policy = DQNTrainer(args, reward_man)
-        elif args.policy == "dqnatt":
-            policy = DQNAttTrainer(args, reward_man)
         elif "dqn_emb" in args.policy:
             policy = DQNEmbTrainer(args, reward_man)
         elif "ac" in args.policy:
