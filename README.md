@@ -1,11 +1,11 @@
----
+<!-- ---
 ArtifactType: nupkg, executable, azure-web-app, azure-cloud-service, etc. More requirements for artifact type standardization may come later.
 Documentation: URL
 Language: typescript, csharp, java, js, python, golang, powershell, markdown, etc. More requirements for language names standardization may come later.
 Platform: windows, node, linux, ubuntu16, azure-function, etc. More requirements for platform standardization may come later.
 Stackoverflow: URL
 Tags: comma,separated,list,of,tags
----
+--- -->
 
 # Real-time Omni-channel Order Fulfillment Intelligence
 
@@ -184,27 +184,27 @@ Create the primal-dual policy for use of imitation learining:
 
 Baseline (using imitation learing only):
 ```code
-py code/main.py --inv_loc data/loc_5.json --city_loc data\cities_3.json --num_inv_nodes 50 --num_skus 64 --policy dqn_emb --episodes 512 --max_inv_prod 20 --train_iter 4 --plot --save_dir policies_loc_5/dqn_emb --dqn_steps 10 --epsilon_decay 512 --order_max 32 --expert_dir policies_loc_5/primal_loc_5 --expert_pretrain 2048 --rand_max_prod --rand_inv_sku_lam
+py code/main.py --inv_loc data/loc_5.json --city_loc data\cities_3.json --num_inv_nodes 50 --num_skus 64 --policy dqn_emb --episodes 512 --max_inv_prod 20 --train_iter 4 --plot --save_dir policies_loc_5/dqn_emb --dqn_steps 10 --order_max 32 --expert_dir policies_loc_5/primal_loc_5 --expert_pretrain 2048 --rand_max_prod --rand_inv_sku_lam
 ```
 
 Not using randomization of the maximum product quantity and invetory SKU lambda value:
 ```code
-py code/main.py --inv_loc data/loc_5.json --city_loc data\cities_3.json --num_inv_nodes 50 --num_skus 64 --policy dqn_emb_no_rand --episodes 512 --max_inv_prod 20 --train_iter 4 --plot --save_dir policies_loc_5/dqn_emb_loc_5_no_rand --dqn_steps 10 --epsilon_decay 512 --order_max 32 --expert_dir policies_loc_5/primal_loc_5 --expert_pretrain 2048
+py code/main.py --inv_loc data/loc_5.json --city_loc data\cities_3.json --num_inv_nodes 50 --num_skus 64 --policy dqn_emb_no_rand --episodes 512 --max_inv_prod 20 --train_iter 4 --plot --save_dir policies_loc_5/dqn_emb_loc_5_no_rand --dqn_steps 10 --order_max 32 --expert_dir policies_loc_5/primal_loc_5 --expert_pretrain 2048
 ```
 
 Not using imitation learning (i.e., pretrinaing on prior policy):
 ```code
-py code/main.py --inv_loc data/loc_5.json --city_loc data/cities_3.json --num_inv_nodes 50 --num_skus 64 --policy dqn_emb_no_pretrain --episodes 512 --max_inv_prod 20 --train_iter 4 --plot --save_dir policies_loc_5/dqn_emb_loc_5_no_pretrain --dqn_steps 10 --rand_max_prod --rand_inv_sku_lam --epsilon_decay 512 --order_max 32
+py code/main.py --inv_loc data/loc_5.json --city_loc data/cities_3.json --num_inv_nodes 50 --num_skus 64 --policy dqn_emb_no_pretrain --episodes 512 --max_inv_prod 20 --train_iter 4 --plot --save_dir policies_loc_5/dqn_emb_loc_5_no_pretrain --dqn_steps 10 --rand_max_prod --rand_inv_sku_lam --order_max 32
 ```
 
 Not using multistep DQN:
 ```code
-py code/main.py --inv_loc data/loc_5.json --city_loc data\cities_3.json --num_inv_nodes 50 --num_skus 64 --policy dqn_emb_no_multistep --episodes 512 --max_inv_prod 20 --train_iter 4 --plot --save_dir policies_loc_5/dqn_emb_loc_5_no_multistep --dqn_steps 1 --epsilon_decay 512 --order_max 32 --expert_dir policies_loc_5/primal_loc_5 --expert_pretrain 2048 --rand_max_prod --rand_inv_sku_lam
+py code/main.py --inv_loc data/loc_5.json --city_loc data\cities_3.json --num_inv_nodes 50 --num_skus 64 --policy dqn_emb_no_multistep --episodes 512 --max_inv_prod 20 --train_iter 4 --plot --save_dir policies_loc_5/dqn_emb_loc_5_no_multistep --dqn_steps 1 --order_max 32 --expert_dir policies_loc_5/primal_loc_5 --expert_pretrain 2048 --rand_max_prod --rand_inv_sku_lam
 ```
 
 Not using margin loss for imitation learning:
 ```code
-py code/main.py --inv_loc data/loc_5.json --city_loc data\cities_3.json --num_inv_nodes 50 --num_skus 64 --policy dqn_emb --episodes 512 --max_inv_prod 20 --train_iter 4 --plot --save_dir policies_loc_5/dqn_emb_no_margin --dqn_steps 10 --epsilon_decay 512 --order_max 32 --expert_dir policies_loc_5/primal_loc_5 --expert_pretrain 2048 --rand_max_prod --rand_inv_sku_lam --expert_lam 0
+py code/main.py --inv_loc data/loc_5.json --city_loc data\cities_3.json --num_inv_nodes 50 --num_skus 64 --policy dqn_emb --episodes 512 --max_inv_prod 20 --train_iter 4 --plot --save_dir policies_loc_5/dqn_emb_no_margin --dqn_steps 10 --order_max 32 --expert_dir policies_loc_5/primal_loc_5 --expert_pretrain 2048 --rand_max_prod --rand_inv_sku_lam --expert_lam 0
 ```
 
 Evaluate the results (without showing random and naive baselines):

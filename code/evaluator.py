@@ -11,7 +11,6 @@ from reward_manager import RewardManager
 from naive_policy import NaivePolicy
 from random_policy import RandomPolicy
 from dqn_policy import DQNTrainer
-from dqn_att_policy import DQNAttTrainer
 from dqn_emb_policy import DQNEmbTrainer
 from primal_dual_policy import PrimalDual
 from actor_critic_policy import ActorCriticPolicy
