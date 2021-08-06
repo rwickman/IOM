@@ -1,7 +1,8 @@
-from simulator import DemandNode, InventoryNode, InventoryProduct
+from nodes import DemandNode, InventoryNode
 from fulfillment_plan import FulfillmentPlan
 
 class RewardManager:
+    """Handles the reward."""
     def __init__(self, args):
         self.args = args
         # Reward scaling factor to make learning easier as large values take longer to converge

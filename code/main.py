@@ -72,7 +72,7 @@ if __name__ == "__main__":
                     help='Max bounds for coordinates.')
     sim_args.add_argument("--num_skus", type=int, default=2,
                     help="Number of unique products SKUs.")
-    sim_args.add_argument("--max_inv_prod", type=int, default=10,
+    sim_args.add_argument("--max_inv_prod", type=int, default=20,
                     help="Max inventory for each product across all inventory nodes.")
     sim_args.add_argument("--min_inv_prod", type=int, default=0,
                     help="Min inventory for each product across all inventory nodes.")
@@ -87,7 +87,7 @@ if __name__ == "__main__":
     sim_args.add_argument("--rand_inv_sku_lam", action="store_true",
                     help="Use a random sku lamabda value for each epsiode between [1, num_skus] (this overrides inv_sku_lam).",)
     
-    sim_args.add_argument("--order_max", type=int, default=256,
+    sim_args.add_argument("--order_max", type=int, default=128,
                     help="Max number of orders in an episode during training.")
     sim_args.add_argument("--eval_order_max", type=int, default=None,
                     help="Max number of orders in an episode during evaluation.")
@@ -103,7 +103,7 @@ if __name__ == "__main__":
     parser.add_argument("--min_epsilon", type=float, default=0.01,
                     help="Minimum epsilon value used for epsilon-greedy in DQN.")
     parser.add_argument("--epsilon_decay", type=int, default=1024,
-                    help="Epsilon decay step.")
+                    help="Epsilon decay step used for decaying the epsilon value in epsilon-greedy exploration.")
     parser.add_argument("--lr", type=float, default=6e-4,
                     help="Learning rate used for DRL models.")
     parser.add_argument("--lr_gamma", type=float, default=0.999,
@@ -150,6 +150,8 @@ if __name__ == "__main__":
                     help="Margin value used for expert margin classification loss.")                
     imit_args.add_argument("--expert_lam", type=float, default=0.01,
                     help="Weight of the expert margin classification loss.")
+    imit_args.add_argument("--expert_epsilon", type=float, default=0.0,
+                    help="Epsilon value added to priority value when using PER.")
 
 
     dqn_args = parser.add_argument_group("DQN")
@@ -165,11 +167,14 @@ if __name__ == "__main__":
                     help="Alpha used for proportional priority.")
     dqn_args.add_argument("--tgt_update_step", type=int, default=1,
                     help="Number of training batches before target is updated.")
-    dqn_args.add_argument("--mem_cap", type=int, default=65536,
+    dqn_args.add_argument("--mem_cap", type=int, default=32768,
                     help="Replay memory capacity.")
+    dqn_args.add_argument("--expert_mem_cap", type=int, default=16384,
+                    help="Number of expert experiences in replay memory.")
+    
     dqn_args.add_argument("--dqn_steps", type=int, default=1,
                     help="Number of steps to use for multistep DQN.")
-    dqn_args.add_argument("--tgt_tau", type=float, default=0.01,
+    dqn_args.add_argument("--tgt_tau", type=float, default=0.05,
                     help="The tau value to control the update rate of the target DQN parameters.")
 
     pd_args = parser.add_argument_group("Primal-Dual")
@@ -181,10 +186,15 @@ if __name__ == "__main__":
                     help="Evaluate the policies.")
     eval_args.add_argument("--policy_dir", default="../policies",
                     help="Directory containing the model policies to load during evaluation.")
-    eval_args.add_argument("--eval_episodes", type=int, default=512,
+    eval_args.add_argument("--eval_episodes", type=int, default=128,
                     help="Number of evaluation episodes.")
     eval_args.add_argument("--num_bar_ep", type=int, default=5,
                     help="Number of episodes to plot on average reward episode figure.")
+    eval_args.add_argument("--no_rand_fulfill_eval", action="store_true",
+                    help="Don't plot the random results in evaluation.")
+    eval_args.add_argument("--no_naive_fulfill_eval", action="store_true",
+                    help="Don't plot the naive results in evaluation.")
+
 
 
     vis_args = parser.add_argument_group("Visual")

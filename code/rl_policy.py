@@ -2,7 +2,7 @@
 from abc import ABC, abstractmethod
 import torch
 
-from simulator import InventoryNode, DemandNode, InventoryProduct
+from nodes import InventoryNode, DemandNode, InventoryProduct
 from fulfillment_plan import FulfillmentPlan
 from policy import PolicyResults, Policy, Experience
 from reward_manager import RewardManager
@@ -11,6 +11,7 @@ from reward_manager import RewardManager
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class RLPolicy(Policy, ABC):
+    """Superclass for all RLPolcies"""
     def __init__(self, args, reward_man: RewardManager):
         super().__init__(args, True, load_args=True)
         self._reward_man = reward_man
@@ -55,6 +56,13 @@ class RLPolicy(Policy, ABC):
                 demand_loc: torch.Tensor,
                 cur_fulfill: torch.Tensor,
                 item_hot: torch.Tensor) -> torch.Tensor:
+        """Create the normalized state from the given state elements.
+        
+        
+        Args:
+            inv: tensor which contains rows for inventory nodes and columsn for SKU quantity
+            inv_locs: tensor which contains 
+        """
         
         # Concatenate together and scale elements
         return torch.cat((
@@ -76,10 +84,18 @@ class RLPolicy(Policy, ABC):
         return valid_actions
 
     def __call__(self,
-                inv_nodes: list[InventoryNode],
+                inv_nodes: list,
                 demand_node: DemandNode,
                 argmax=False) -> PolicyResults:
-
+        """Create a fulfillment decision for the DemandNode using a RL based policy.
+        
+        Args:
+            list of InventoryNodes.
+            deamnd_node: the DeamndNode representing the current order.
+        
+        Returns:
+            the fulfillment decision results.
+        """
         run_expert = self._train_step < self.args.expert_pretrain
         if run_expert:
             expert_plan = self._expert_policy(inv_nodes, demand_node)
@@ -133,7 +149,6 @@ class RLPolicy(Policy, ABC):
 
                 # Get indices of nodes that have nonzero inventory
                 valid_idxs = (inv[:, inv_prod.sku_id] > 0).nonzero().flatten()
-                # print("valid_idxs", valid_idxs)
 
                 # Select an inventory node
                 if run_expert:
@@ -149,7 +164,7 @@ class RLPolicy(Policy, ABC):
                                 inv_nodes[action],
                                 demand_node,
                                 fulfill_plan)
-                # print("reward", reward)
+
                 # Add experience
                 exps.append(
                     Experience(state, action, reward, is_expert=run_expert))

@@ -1,18 +1,15 @@
 import torch
-from torch.cuda import is_available
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import numpy as np
 import os
 import math
-import time
 
 
-from simulator import InventoryNode, DemandNode, InventoryProduct
+from nodes import InventoryNode, DemandNode
 from reward_manager import RewardManager
-from fulfillment_plan import FulfillmentPlan
-from policy import PolicyResults, Experience
+from policy import PolicyResults
 from rl_policy import RLPolicy
 from replay_memory import ReplayMemory, PrioritizedExpReplay
 from primal_dual_policy import PrimalDual
@@ -20,6 +17,7 @@ from primal_dual_policy import PrimalDual
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class DQNTrainer(RLPolicy):
+    """Trainer and policy for DQN RL approach."""
     def __init__(self, args, reward_man: RewardManager, model_file="dqn_model.pt", model_name="DQN"):
         super().__init__(args, reward_man)
 
@@ -62,6 +60,7 @@ class DQNTrainer(RLPolicy):
         return gam_arr
 
     def _create_model(self) -> nn.Module:
+        """Create the PyTroch model."""
         return DQN(self.args).to(device)
 
     def _update_target(self):
@@ -73,63 +72,36 @@ class DQNTrainer(RLPolicy):
 
     @property
     def epsilon_threshold(self):
+        """Return the current epsilon value used for epsilon-greedy exploration."""
+        cur_step = max(self._train_step - self.args.expert_pretrain, 0)
         return self.args.min_epsilon + (self.args.epsilon - self.args.min_epsilon) * \
-            math.exp(-1. * self._train_step / self.args.epsilon_decay)
+            math.exp(-1. * cur_step / self.args.epsilon_decay)
     
 
-    # def _add_stored_exps(self):
-    #     next_states = []
-    #     rewards = []
-    #     cur_exps = []
-    #     td_errors = []
-    #     for exp in self._exp_buffer:
-    #         rewards.append(exp.reward)
-    #         next_states.append(exp.next_state)
-    #         if self.args.no_per:
-    #             self._memory.add(exp)
-    #             cur_exps.append(exp)
-    #         else:
-    #             with torch.no_grad():
-    #                 q_value = self._dqn(exp.state)[exp.action]
-    #                 if exp.next_state is not None:
-    #                     # Get the valid action for next state the maximizes the q-value
-    #                     valid_actions = self._get_valid_actions(exp.next_state)
-    #                     q_next = self._dqn(exp.next_state)
-
-    #                     next_action = self.sample_action(q_next[valid_actions], argmax=True)
-    #                     next_action = valid_actions[next_action] 
-
-    #                     # Compute TD target based on target function q-value for next state
-    #                     q_next_target = self._dqn_target(exp.next_state)[next_action]
-    #                     td_target = exp.reward + self.args.gamma *  q_next_target
-    #                 else:
-    #                     td_target = exp.reward
-
-    #             td_error = td_target - q_value
-    #             td_errors.append(td_error)
-    #             cur_exps.append(exp)
-    #             self._memory.add(exp, td_error)
-            
-    #     self._exp_buffer.clear()
 
     def _add_stored_exps(self):
-        td_errors = []
+        """Add experinced stored in temporary buffer into replay memory.
+        
+        This method makes the assumption that self._exp_buffer only contains experiences
+        from the same episode.
+        """
+        temp_r = []
         rewards = torch.zeros(self.args.dqn_steps)
-
+        new_r = []
         for i in reversed(range(len(self._exp_buffer))):
             rewards[0] = self._exp_buffer[i].reward
-
-            
-            # print("float(rewards.dot(self._gam_arr))", float(rewards.dot(self._gam_arr)))
-            # print("self._exp_buffer[i].reward", self._exp_buffer[i].reward)
-            # assert round(self._exp_buffer[i].reward, 5) == round(float(rewards.dot(self._gam_arr)), 5)
-
+            cur_gamma = self.args.gamma
+            temp_r.append(rewards[0])
             if i + self.args.dqn_steps < len(self._exp_buffer):
                 # Update the experince reward to be the n-step return
                 # NOTE: n experiences at the end will use 1-step return
                 self._exp_buffer[i].reward = rewards.dot(self._gam_arr)
                 self._exp_buffer[i].next_state = self._exp_buffer[i + self.args.dqn_steps].state
-                assert torch.equal(self._exp_buffer[i].next_state, self._exp_buffer[i + self.args.dqn_steps].state)
+                
+                cur_gamma = cur_gamma ** self.args.dqn_steps
+            new_r.append(self._exp_buffer[i].reward)
+
+            self._exp_buffer[i].gamma = cur_gamma
 
             if self.args.no_per:
                 self._memory.add(self._exp_buffer[i])
@@ -138,6 +110,8 @@ class DQNTrainer(RLPolicy):
                     q_value = self._dqn(self._exp_buffer[i].state)[self._exp_buffer[i].action]
                     if self._exp_buffer[i].next_state is not None:
                         # Get the valid action for next state the maximizes the q-value
+
+  
                         valid_actions = self._get_valid_actions(self._exp_buffer[i].next_state)
                         q_next = self._dqn(self._exp_buffer[i].next_state)
 
@@ -146,24 +120,28 @@ class DQNTrainer(RLPolicy):
 
                         # Compute TD target based on target function q-value for next state
                         q_next_target = self._dqn_target(self._exp_buffer[i].next_state)[next_action]
-                        td_target = self._exp_buffer[i].reward + self.args.gamma *  q_next_target
+                        td_target = self._exp_buffer[i].reward + self._exp_buffer[i].gamma *  q_next_target
+
+                
                     else:
                         td_target = self._exp_buffer[i].reward
 
                 td_error = td_target - q_value
-                td_errors.append(td_error)
-                self._memory.add(self._exp_buffer[i], td_error)
-            
+                self._memory.add(self._exp_buffer[i], td_error)      
+
             # Shift the rewards down
             rewards = rewards.roll(1)
 
+        # Clear the experiences from the experince buffer
         self._exp_buffer.clear()
 
 
     def is_train_ready(self) -> bool:
+        """Check for if the model is ready to start training."""
         return self._memory.cur_cap() >= self.args.batch_size
 
     def save(self):
+        """Save the models, optimizer, and other related data."""
         super().save()
         model_dict = {
             self._model_name : self._dqn.state_dict(),
@@ -180,6 +158,7 @@ class DQNTrainer(RLPolicy):
         self._memory.save()
     
     def load(self):
+        """Load the models, optimizer, and other related data."""
         model_dict = torch.load(self._model_file, map_location=device)
         self._dqn.load_state_dict(model_dict[self._model_name])
         if self._model_tgt_name in model_dict:
@@ -193,6 +172,7 @@ class DQNTrainer(RLPolicy):
         self._hyper_dict = model_dict["hyper_dict"]
 
     def reset(self):
+        """Reset for next episode."""
         # Add experiences to memory and empty exp buffer
         self._add_stored_exps()
 
@@ -202,6 +182,7 @@ class DQNTrainer(RLPolicy):
         self._exp_buffer.pop()
 
     def sample_action(self, q_values: torch.Tensor, argmax=False) -> int:
+        """Sample an action from the given q-values."""
         if not argmax and self.epsilon_threshold >= np.random.rand():
             # Perform random action
             action = np.random.randint(q_values.shape[0])
@@ -221,6 +202,7 @@ class DQNTrainer(RLPolicy):
         next_states = torch.zeros(self.args.batch_size, self.inp_size).to(device)
         next_state_mask = torch.zeros(self.args.batch_size).to(device)
         is_experts = torch.zeros(self.args.batch_size, dtype=torch.bool).to(device)
+        gammas = torch.zeros(self.args.batch_size).to(device)
 
         # Unwrap the experiences
         for i, exp in enumerate(exps):
@@ -228,24 +210,29 @@ class DQNTrainer(RLPolicy):
             actions.append(exp.action)
             rewards[i] = exp.reward
             is_experts[i] = exp.is_expert
+            gammas[i] = exp.gamma
             if exp.next_state is not None:
                 next_states[i] = exp.next_state 
                 next_state_mask[i] = 1
 
-        return states, actions, rewards, next_states, next_state_mask, is_experts 
+        return states, actions, rewards, next_states, next_state_mask, is_experts, gammas
 
     def train(self) -> float:
+        """Train the model over a sampled batch of experiences.
+        
+        Returns:
+            the loss for the batch
+        """
         if self.args.no_per:
             exps = self._memory.sample(self.args.batch_size)
         else:
             is_ws, exps, indices = self._memory.sample(self.args.batch_size, self._train_step)
         td_targets = torch.zeros(self.args.batch_size).to(device)
         
-        states, actions, rewards, next_states, next_state_mask, is_experts = self._unwrap_exps(exps)
+        states, actions, rewards, next_states, next_state_mask, is_experts, gammas = self._unwrap_exps(exps)
 
         # Select the q-value for every state
         actions = torch.tensor(actions, dtype=torch.int64).to(device)
-
 
         q_values_matrix = self._dqn(states)
         q_values = q_values_matrix.gather(1, actions.unsqueeze(1)).squeeze(1)
@@ -288,9 +275,9 @@ class DQNTrainer(RLPolicy):
 
                 # Set TD Target using the q-value of the target network
                 # This is the Double-DQN target
-                td_targets[i] = rewards[i] + self.args.gamma * q_next_target[q_next_idx, action]
+                td_targets[i] = rewards[i] + gammas[i] * q_next_target[q_next_idx, action]
                 q_next_idx += 1
-
+ 
         self._optim.zero_grad()
 
         # Compute loss
@@ -300,7 +287,7 @@ class DQNTrainer(RLPolicy):
             loss = torch.mean(td_errors ** 2)
         else:
             loss = torch.mean(td_errors ** 2  *  is_ws)
-            self._memory.update_priorities(indices, td_errors.detach().abs())
+            self._memory.update_priorities(indices, td_errors.detach().abs(), is_experts)
 
         loss += expert_margin_loss * self.args.expert_lam
         loss.backward()
@@ -309,29 +296,33 @@ class DQNTrainer(RLPolicy):
         nn.utils.clip_grad.clip_grad_norm_(
             self._dqn.parameters(),
             self.args.max_grad_norm)
-        print("self.epsilon_threshold", self.epsilon_threshold)
+
 
         # Train model
         self._optim.step()
 
         # Check if using decay and min lr not reached
-        #print("self._optim.param_groups[0]['lr']", self._optim.param_groups[0]["lr"])
         if not self.args.no_lr_decay and self._optim.param_groups[0]["lr"] > self.args.min_lr:
             # If so, decay learning rate
             self._lr_scheduler.step()
+        else:
+            self._optim.param_groups[0]["lr"] = self.args.min_lr
 
         self._train_step += 1
 
         if self._train_step % self.args.tgt_update_step == 0:
             self._update_target()
-
+        
+        # Print out q_values and td_targets for debugging/progress updates
         if (self._train_step + 1) % 8 == 0:
+            print("self.epsilon_threshold", self.epsilon_threshold)
             print("q_values", q_values)
             print("td_targets", td_targets)
 
         return float(loss.detach())
 
     def predict(self, state: torch.Tensor) -> torch.Tensor:
+        """Make a prediction on the q_values, used for superclsas __call__."""
         q_values = self._dqn(state)
         return q_values
 
@@ -340,9 +331,11 @@ class DQNTrainer(RLPolicy):
                 demand_node: DemandNode,
                 argmax=False) -> PolicyResults:
         
+        # Call super class to get PolicyResults        
         results = super().__call__(inv_nodes, demand_node, argmax)
         
         # Set next state of the previous order to the first item in the next order
+        # This is required since an episode consists of multiple orders
         if not self.args.eval:
             if len(self._exp_buffer) > 0:
                 self._exp_buffer[-1].next_state = results.exps[0].state
@@ -350,22 +343,23 @@ class DQNTrainer(RLPolicy):
 
         return results
 
-    # def compute_return(self,
-    #     rewards: list[float]):
-    #     """Compute the return for an episode ."""
-    #     with torch.no_grad():
-    #         returns = torch.zeros_like(rewards, dtype=torch.float32).to(device)
-    #         T = len(rewards)
-    #         for t in reversed(range(T)):
-    #             # Check if it is a terminal state
-    #             if t == T - 1 or next_states[t] is None:
-    #                 returns[t] = rewards[t]
-    #             else:
-    #                 returns[t] = rewards[t] + self.args.gamma * returns[t+1]
+    def compute_return(self,
+        rewards: list[float]):
+        """Compute the return for an episode."""
+        with torch.no_grad():
+            returns = torch.zeros_like(rewards, dtype=torch.float32).to(device)
+            T = len(rewards)
+            for t in reversed(range(T)):
+                # Check if it is a terminal state
+                if t == T - 1:
+                    returns[t] = rewards[t]
+                else:
+                    returns[t] = rewards[t] + self.args.gamma * returns[t+1]
 
-    #         return returns
+            return returns
 
 class DQN(nn.Module):
+    """PyTorch module for the FFN DQN policy."""
     def __init__(self, args):
         super().__init__()
         self.args = args
@@ -388,6 +382,7 @@ class DQN(nn.Module):
 
     def forward(self, 
                 state) -> torch.Tensor:
+        """Run the state through the network. """
         x = F.relu(self._fc_1(state))
         for hidden_fc in self.hidden_fcs:
             x = F.relu(hidden_fc(x))

@@ -1,5 +1,4 @@
 import random
-from dataclasses import dataclass
 import numpy as np
 import matplotlib.pyplot as plt
 import json
@@ -7,179 +6,18 @@ import os
 import math
 from scipy.stats import beta
 
-# from policy import PolicyResults
+from nodes import *
 
-@dataclass
-class InventoryProduct:
-    # Unique ID
-    sku_id: int
-    # Number of products with this SKU
-    quantity: int
-
-    def copy(self):
-        return InventoryProduct(self.sku_id, self.quantity)
-
-@dataclass
-class Coordinates:
-    x: float
-    y: float
-    
-class Location:
-    def __init__(self, coords: Coordinates):
-        self._coords = coords
-
-    def get_distance(self, other_loc):
-        """Get euclidean distace between coordinates."""
-        return ((self._coords.x - other_loc.coords.x) ** 2 + (self._coords.y - other_loc.coords.y) ** 2) ** 0.5
-
-    @property
-    def coords(self):
-        return self._coords
-
-class Node:
-    def __init__(self, inv_prods: list, loc: Location):
-        self._inv = Inventory(inv_prods)
-        self._loc = loc
-
-    @property
-    def inv(self):
-        return self._inv
-    
-    @property
-    def loc(self):
-        return self._loc
-
-class DemandNode(Node):
-    def __init__(self, inv_prods: list, loc: Location):
-        super().__init__(inv_prods, loc)
-
-class Inventory:
-    def __init__(self, inv_prods: list = None):
-        self._inv_dict = {}
-        # Number of items currently in inventory
-        self._inv_size = 0
-        
-        # Populate the initial inventory
-        if inv_prods:    
-            for inv_prod in inv_prods:
-                self.add_product(inv_prod)
-    
-    def add_product(self, inv_prod: InventoryProduct):
-        """Add products and quantites of each."""
-        if inv_prod.quantity < 0:
-            raise Exception("Product quantity cant be less than 0.")
-
-        if inv_prod.sku_id is None:
-            raise Exception("Invalid SKU ID.")
-
-        if inv_prod.sku_id not in self._inv_dict:
-            self._inv_dict[inv_prod.sku_id] = inv_prod.quantity
-        else:
-            self._inv_dict[inv_prod.sku_id] += inv_prod.quantity
-        
-        # Update inventory size
-        self._inv_size += inv_prod.quantity
-    
-    def remove_product(self, inv_prod: InventoryProduct):
-        if inv_prod.sku_id not in self._inv_dict or self._inv_dict[inv_prod.sku_id] < inv_prod.quantity: 
-            raise Exception("Tried to remove unavailable product.")
-        
-        self._inv_dict[inv_prod.sku_id] -= inv_prod.quantity
-        self._inv_size -= inv_prod.quantity
-
-        # Sanity check    
-        assert self._inv_size >= 0
-    
-    
-    def product_quantity(self, sku_id: int) -> int:
-        if sku_id not in self._inv_dict:
-            return 0
-        else:
-            return self._inv_dict[sku_id]
-
-    @property
-    def inv_size(self):
-        return self._inv_size
-    
-    @property
-    def sku_ids(self):
-        return self._inv_dict.keys()
-    
-    def items(self):
-        inv_prods = [InventoryProduct(sku_id, quantity) for sku_id, quantity in self._inv_dict.items()]
-        inv_prods = sorted(inv_prods, key=lambda p: p.sku_id)
-        for inv_prod in inv_prods: 
-            if inv_prod.quantity > 0:
-                yield inv_prod
-
-
-class InventoryNode(Node):
-    def __init__(self, inv_prods: list, loc: Location, inv_node_id: int):
-        super().__init__(inv_prods, loc)
-        self._inv_node_id = inv_node_id
-    
-    @property
-    def inv_node_id(self) -> int:
-        return self._inv_node_id
-
-class InventoryNodeManager:
-    """Manage the total inventory over all the inventory nodes."""
-    def __init__(self, inv_nodes: list[InventoryNode]): 
-        self._inv_nodes_dict = {}
-        self._init_inv(inv_nodes)
-        
-    def _init_inv(self, inv_nodes: list[InventoryNode]):
-        """Create an Inventory object that accumulates inventory accross all nodes."""
-        inv_prods = []
-        for inv_node in inv_nodes:
-            # Add to inventory node to dict
-            self._inv_nodes_dict[inv_node.inv_node_id] = inv_node
-
-            # Add its inventory to the overall inventory
-            for sku_id in inv_node.inv.sku_ids:
-                inv_quantity = inv_node.inv.product_quantity(sku_id)
-                if inv_quantity > 0:
-                    inv_prods.append(
-                        InventoryProduct(
-                            sku_id,
-                            inv_quantity))
-
-        self._inv = Inventory(inv_prods)
-
-    @property
-    def stock(self):
-        inv_prods = []
-        for inv_prod in self._inv.items():
-            inv_prods.append(inv_prod)
-        return inv_prods
-
-    @property
-    def sku_ids(self):
-        return self._inv.keys()
-
-    @property
-    def inv(self):
-        return self._inv
-
-    def product_quantity(self, sku_id: int) -> int:
-        return self._inv.product_quantity(sku_id)
-
-    def add_product(self, inv_node_id: int, inv_prod: InventoryProduct):
-        self._inv_nodes_dict[inv_node_id].inv.add_product(inv_prod)
-        self._inv.add_product(inv_prod)
-
-    def remove_product(self, inv_node_id: int, inv_prod: InventoryProduct):
-        self._inv_nodes_dict[inv_node_id].inv.remove_product(inv_prod)
-        self._inv.remove_product(inv_prod)
-
-    def empty(self):
-        """Empty all the stock from all the invetory nodes."""
-        for inv_node_id, inv_node in self._inv_nodes_dict.items():
-            for inv_prod in inv_node.inv.items():
-                self.remove_product(inv_node_id, inv_prod)
 
 class Simulator:
+    """Simulator for simulating omni-channel order fulfillment. """
     def __init__(self, args, policy=None):
+        """Initilize the simulator.
+        
+        Args:
+            args: Namespace of CLI arguments.
+            policy: Policy that represents the algorithm to make order fulfillment decisions.
+        """
         self.args = args
 
         self._train_dict = {
@@ -208,7 +46,7 @@ class Simulator:
         self._init_inv_nodes()
 
     def _init_inv_nodes(self):
-        """Initialize the inventory nodes."""
+        """initialize the inventory nodes."""
         
         # Check if you want specific location coordinates
         if self.args.inv_loc:
@@ -237,8 +75,10 @@ class Simulator:
         self._inv_node_man = InventoryNodeManager(self._inv_nodes)
 
     def _reset(self):
+        """Reset simulator for next episode"""
         # Check if inventory is still left
         if self._inv_node_man.inv.inv_size > 0 and not self.args.eval:
+            # Indicate to the policy that 
             self._policy.early_stop_handler()
         
         # Empty the inventory
@@ -252,6 +92,17 @@ class Simulator:
             self._policy.reset()
 
     def _gen_inv_node(self, loc: Location = None) -> InventoryNode:
+        """Generate an inventory node.
+        
+        The generated inventory node will be initialized with random inventory and a
+        random location if not given. 
+
+        Args:
+            loc: the optional location of where to generate the inventory node.
+        
+        Returns:
+            the generated inventory node.
+        """
         if loc is None:
             loc = self._rand_loc()
 
@@ -262,8 +113,18 @@ class Simulator:
 
         return InventoryNode(inv_prods, loc, inv_node_id)
 
-    def _gen_inv_node_stock(self, max_inv_prod: int, inv_sku_lam: float = None):
-        """Generate the inventory for this node."""
+    def _gen_inv_node_stock(self, max_inv_prod: int, inv_sku_lam: float = None) -> list:
+        """Generate inventory for an inventory node.
+        
+        Args:
+            max_inv_prod: maximum inventory for every product 
+                (e.g., every quantity for SKU will be between [self.args.min_inv_prod, max_inv_prod])
+            inv_sku_lam: lambda value that parameterizes the beta distirbution that samples 
+                how many SKUs will be sampled
+
+        Returns:
+            the list of InventoryProduct where each contains the quanity of each unique product SKU.
+        """
         inv_prods = []
         
         sku_ids = list(range(self.args.num_skus))
@@ -303,7 +164,9 @@ class Simulator:
 
 
     def _restock_inv(self):
-
+        """Restock (i.e., reinitialize) the inventory at all of the inventory nodes."""
+        
+        # Get the max_inv_prod
         if self.args.rand_max_prod:
             # Set the max inventory for all SKUs for every node
             max_inv_prod = random.randint(1, self.args.max_inv_prod)
@@ -325,7 +188,15 @@ class Simulator:
                 self._inv_node_man.add_product(i, inv_prod)
 
     def _gen_demand_node(self, stock: list = None):
-        """Generate a demand node."""
+        """Generate a demand node.
+        
+        Args:
+            stock: the optional list of InventoryProducts that verifies demand 
+                generated can actually be fulfilled.
+
+        Returns:
+            the generated demand node
+        """
         if not stock:
             stock = self._inv_node_man.stock
 
@@ -364,17 +235,16 @@ class Simulator:
 
     def _sample_circle_point(self):
         """Generate a point on within a circle centered at (0,0).
-        
-        Args:
-            radius: the radius of the given circle.
-        """
 
-        
+        Returns:
+            a tuple of x and y coordinates.
+        """
         # Generate point on perimeter
         theta = random.random() * 2 * math.pi
         
         # Generate radius
-        r = self.args.city_radius * beta.rvs(self.args.demand_beta_a, self.args.demand_beta_a) ** 0.5 
+        r = self.args.city_radius * beta.rvs(
+            self.args.demand_beta_a, self.args.demand_beta_b) ** 0.5 
         
         # Get points based on polar coordinates
         x = r * math.cos(theta)
@@ -383,12 +253,23 @@ class Simulator:
         return x, y
 
     def _rand_loc(self) -> Location:
+        """Sample a random unifrom location from x, y between [-self.args.coord_bounds, self.args.coord_bounds].
+        
+        Returns:
+            the sampled location.
+        """
         rand_x = random.uniform(-self.args.coord_bounds, self.args.coord_bounds)
         rand_y = random.uniform(-self.args.coord_bounds, self.args.coord_bounds)
         coords = Coordinates(rand_x, rand_y)
         return Location(coords)
 
-    def _gen_demand_loc(self):
+    def _gen_demand_loc(self) -> Location:
+        """Generate a location for a demand node.
+        
+        How the location is generated depends on if cities were passed to CLI arguments or not.
+        If so, it will use city location generation, else it will use random uniform generation.
+
+        """
         if self.args.city_loc:
             # Perform rejection sampling to generate point that remains inside grid bounds
             while True:
@@ -413,18 +294,24 @@ class Simulator:
             return self._rand_loc()
 
     def _save(self):
+        """Save training information."""
         with open(self._train_file, "w") as f:
             json.dump(self._train_dict, f)
     
     def _load(self):
+        """Load training information."""
         if not os.path.exists(self._train_file):
             raise Exception(f"Cannot load because train file {self._train_file} does not exists.")
         with open(self._train_file) as f:
             self._train_dict = json.load(f)
 
 
-    def _load_locs(self, loc_json):
-        """Load inventory node locations."""
+    def _load_locs(self, loc_json: str) -> list:
+        """Load inventory node locations.
+        
+        Returns:
+            a list of city 2D inventory node locations.
+        """
         inv_locs = []
         with open(loc_json) as f:
             coords_list = json.load(f)
@@ -435,6 +322,7 @@ class Simulator:
         return inv_locs
 
     def plot_results(self):
+        """Plot the training results."""
         def moving_average(x):
             return np.convolve(x, np.ones(self.args.reward_smooth_w), 'valid') / self.args.reward_smooth_w
         
@@ -457,6 +345,11 @@ class Simulator:
         plt.show()
 
     def remove_products(self, policy_results):
+        """Remove products in the fulfillment decisions.
+        
+        Args:
+            policy_results: contains the results of an episode of fulfillment decisions.
+        """
         # Remove the products from the inventory nodes
         for fulfillment in policy_results.fulfill_plan.fulfillments():
             for inv_prod in fulfillment.inv.items():
@@ -466,6 +359,7 @@ class Simulator:
 
 
     def run(self):
+        """Run the simulator for self.args.episodes episodes."""
         for e_i in range(self.args.episodes):
             rewards = []
             for t in range(self.args.order_max):
@@ -501,9 +395,11 @@ class Simulator:
 
                 self._train_dict["policy_losses"].append(loss)
 
+        # Save the policy
         if self._policy.is_trainable:
             self._policy.save()
 
+        # Save the training results
         self._save()
         if self.args.plot:
             self.plot_results()

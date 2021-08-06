@@ -5,10 +5,9 @@ import torch.optim as optim
 import os
 from torch.distributions import Categorical
 
-from simulator import InventoryNode, DemandNode, InventoryProduct
+from nodes import InventoryNode, DemandNode
 from reward_manager import RewardManager
-from fulfillment_plan import FulfillmentPlan
-from policy import PolicyResults, Policy, Experience
+from policy import PolicyResults, Experience
 from rl_policy import RLPolicy
 from transformer import Encoder, Decoder
 from shared_models import DemandEncoder, InvEncoder 
@@ -16,13 +15,18 @@ from shared_models import DemandEncoder, InvEncoder
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class ExpBuffer:
+    """A temporary buffer for experiences that are erased after being trained on."""
     def __init__(self, action_dim):
         self.ep_reset = True
         self.action_dim = action_dim
         self.clear()
 
     def add_exp(self, exp: Experience):
-        #print(exp)
+        """Add a experience to the buffer.
+        
+        Args:
+            exp: the Experience containing timestep related information.
+        """
         self.states.append(exp.state)
         self.actions.append(exp.action)
         self.rewards.append(exp.reward)
@@ -36,23 +40,11 @@ class ExpBuffer:
 
     def convert_to_tensor(self):
         """Convert all saved lists to tensors."""
-        #print(len(self.states), len(self.rewards), len(self.actions), len(self.actor_preds), len(self.val_preds))
-        #print("self.states", self.states)
         self.states = torch.stack(self.states)
-        #print("AFTER", self.states)
-        #self.next_states = torch.stack(self.next_states)
         self.rewards = torch.tensor(self.rewards).to(device)
-        
-        # Create one-hot action vectors
-        # one_hot_actions = torch.zeros(len(self.actions), self.action_dim)
-        # self.actions = torch.tensor(self.actions).unsqueeze(1)
-        # self.actions = one_hot_actions.scatter_(1, self.actions, 1)
-        
         self.actions = torch.tensor(self.actions).unsqueeze(1).to(device)
-
         self.actor_preds = torch.tensor(self.actor_preds).to(device)
         self.val_preds = torch.tensor(self.val_preds).to(device)
-        # print(self.states, self.rewards, self.actions, self.actor_preds, self.val_preds)
 
     def pop(self):
         """Pop the last state."""
@@ -64,6 +56,7 @@ class ExpBuffer:
         self.actor_preds.pop()
 
     def clear(self):
+        """Clear the buffer."""
         self.ep_reset = True
         self.states = []
         self.next_states = []
@@ -74,6 +67,7 @@ class ExpBuffer:
         self.num_ep = 0
 
 class ActorCriticPolicy(RLPolicy):
+    """Actor Critic policy."""
     def __init__(self, args, reward_man: RewardManager):
         super().__init__(args, reward_man)
 
@@ -96,6 +90,15 @@ class ActorCriticPolicy(RLPolicy):
             self.load()
 
     def sample_action(self, actor_pred: torch.Tensor, argmax=False) -> int:
+        """Sample an action from the actor output distribution.
+        
+        Args:
+            actor_pred: the prediction of the actor.
+            argmax: bool indicating whether or not to take the argmax.
+        
+        Returns:
+            the int action.
+        """
         if len(actor_pred) == 1:
             return 0
         
@@ -108,6 +111,7 @@ class ActorCriticPolicy(RLPolicy):
         return int(action)
 
     def predict(self, state):
+        """Make a prediction on the state using the policy."""
         with torch.no_grad():
             actor_pred, val_pred = self._actor_critic(state)
             self._exp_buffer.add_val_pred(val_pred)
@@ -116,9 +120,11 @@ class ActorCriticPolicy(RLPolicy):
         return actor_pred
 
     def is_train_ready(self) -> bool:
+        """Check if enough experiences have been collected to start training."""
         return len(self._exp_buffer.states) > self.args.min_exps
 
     def save(self):
+        """Save the model."""
         super().save()
         model_dict = {
             "actor_critic" : self._actor_critic.state_dict(),
@@ -129,6 +135,7 @@ class ActorCriticPolicy(RLPolicy):
         torch.save(model_dict, self._model_file)
 
     def load(self):
+        """Load the model."""
         model_dict = torch.load(self._model_file, map_location=device)
         self._actor_critic.load_state_dict(model_dict["actor_critic"])
         self._optim.load_state_dict(model_dict["optimizer"])
@@ -139,7 +146,6 @@ class ActorCriticPolicy(RLPolicy):
         self._exp_buffer.convert_to_tensor()
 
         num_exs = len(self._exp_buffer.rewards)
-        print("num_exs", num_exs)
         num_minibatches = max(num_exs // self.args.batch_size, 1)
 
         # Compute return, advantages, and TD lambda return for saved experiences
@@ -150,7 +156,6 @@ class ActorCriticPolicy(RLPolicy):
 
         total_loss = 0
 
-        print("rewards", self._exp_buffer.rewards[:10])    
         # Iterate over several epochs
         for i in range(self.args.ac_epochs):
             batch_ids = torch.randperm(num_exs)
@@ -200,7 +205,7 @@ class ActorCriticPolicy(RLPolicy):
 
         return total_loss 
 
-    def _update_params(self, loss):
+    def _update_params(self, loss: torch.tensor):
         self._optim.zero_grad()
         # Compute gradients
         loss.backward()
@@ -214,8 +219,6 @@ class ActorCriticPolicy(RLPolicy):
         self._optim.step()
 
         # Check if using decay and min lr not reached
-        # print("LR", self._optim.param_groups[0]["lr"])
-        # 
         if not self.args.no_lr_decay: 
             if self._optim.param_groups[0]["lr"] > self.args.min_lr:
                 # If so, decay learning rate
@@ -241,7 +244,7 @@ class ActorCriticPolicy(RLPolicy):
         assert val_pred.shape == val_true.shape
         
         # Compute actor loss
-        entropy = 0.01 * -torch.sum(actor_pred.gather(1, actions) * torch.log(actor_pred.gather(1, actions) + self.args.eps))
+        # entropy = 0.01 * -torch.sum(actor_pred.gather(1, actions) * torch.log(actor_pred.gather(1, actions) + self.args.eps))
         actor_loss = -(1/num_ep) * torch.sum(logprob * advs) #+ entropy
 
         # Compute critic loss
@@ -256,6 +259,7 @@ class ActorCriticPolicy(RLPolicy):
                 val_true: torch.Tensor,
                 actions: torch.Tensor,
                 advs: torch.Tensor) -> torch.Tensor:
+        """Compute PPO loss."""
         # Create the distrs
         old_actor_distr = Categorical(old_actor_pred)
         new_actor_distr = Categorical(new_actor_pred)
@@ -266,7 +270,7 @@ class ActorCriticPolicy(RLPolicy):
         new_log_prob = new_actor_distr.log_prob(actions.flatten())
 
         # Compute ratio
-        ratio = torch.exp(new_log_prob - old_log_prob.detach())  # new_prob/(old_prob + self.args.eps)
+        ratio = torch.exp(new_log_prob - old_log_prob.detach())
 
         # Compute the first surrogate objective
         surr_1 = ratio * advs
@@ -275,8 +279,8 @@ class ActorCriticPolicy(RLPolicy):
         surr_2 = torch.clip(
             ratio, 1.0 - self.args.ppo_clip, 1.0 + self.args.ppo_clip) * advs
         
-        entropy = 0.01 * -torch.sum(
-            new_actor_pred.gather(1, actions) * torch.log(new_actor_pred.gather(1, actions) + self.args.eps))
+        # entropy = 0.01 * -torch.sum(
+        #     new_actor_pred.gather(1, actions) * torch.log(new_actor_pred.gather(1, actions) + self.args.eps))
         
         actor_loss = -torch.mean(torch.minimum(surr_1, surr_2)) #+ entropy
 
@@ -289,7 +293,7 @@ class ActorCriticPolicy(RLPolicy):
         val_preds: list[float],
         next_states: list[torch.Tensor],
         scale_advs=True):
-        """Compute the return for an episode ."""
+        """Compute the advanatages and returns for an episode ."""
         with torch.no_grad():
             returns = torch.zeros_like(rewards, dtype=torch.float32).to(device)
             advs = torch.zeros_like(rewards, dtype=torch.float32).to(device)
@@ -413,7 +417,6 @@ class ActorCritic(nn.Module):
 
         batch_size = state.shape[0]
         inv, inv_locs, demand, demand_loc, cur_fulfill, item_hot = self._extract_state(state)
-        #print("inv, inv_locs, demand, demand_loc, cur_fulfill, item_hot", inv, inv_locs, demand, demand_loc, cur_fulfill, item_hot)
         
         # Get inventory mask
         non_zero_items = item_hot.nonzero(as_tuple=True)
@@ -448,9 +451,7 @@ class ActorCritic(nn.Module):
         actor_pred = F.softmax(actor_pred, dim=-1)
 
         if batch_size == 1:
-            # print("item_hot.unsqueeze(1)", item_hot.unsqueeze(1))
-            # print("inv", inv)
-            # print("actor_pred", actor_pred)
             actor_pred = actor_pred.view(-1)
+
         return actor_pred, critic_pred
 

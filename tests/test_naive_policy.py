@@ -51,9 +51,9 @@ class TestNaivePolicy(unittest.TestCase):
 
         # Test rewards are correct
         policy_results = policy(inv_nodes, demand_node)
-        self.assertEqual(policy_results.exps[0].reward, -exp_dist_1)
-        self.assertEqual(policy_results.exps[1].reward, -exp_dist_1 * args.reward_alpha)
-        self.assertEqual(policy_results.exps[2].reward, -exp_dist_2)
+        self.assertEqual(policy_results.exps[0].reward, -exp_dist_1 * reward_man._reward_scale_factor)
+        self.assertEqual(policy_results.exps[1].reward, -exp_dist_1 * args.reward_alpha * reward_man._reward_scale_factor)
+        self.assertEqual(policy_results.exps[2].reward, -exp_dist_2 * reward_man._reward_scale_factor)
 
         # Test the fulfillmemt quantities are correct
         exp_node_0_sku_0_quant = 1

@@ -1,4 +1,4 @@
-from simulator import InventoryNode, DemandNode, InventoryProduct
+from nodes import InventoryNode, DemandNode, InventoryProduct
 from fulfillment_plan import FulfillmentPlan
 from policy import PolicyResults, Policy, Experience
 
@@ -8,9 +8,17 @@ class NaivePolicy(Policy):
         self._reward_man = reward_man
 
     def __call__(self,
-                inv_nodes: list[InventoryNode],
+                inv_nodes: list,
                 demand_node: DemandNode) -> PolicyResults:
+        """Create a fulfillment decision for the DemandNode using naive policy.
         
+        Args:
+            list of InventoryNodes.
+            deamnd_node: the DeamndNode representing the current order.
+        
+        Returns:
+            the fulfillment decision results.
+        """
         # Keep up with what products have already been allocated
         fulfill_dict = {}
 

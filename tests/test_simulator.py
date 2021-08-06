@@ -52,11 +52,11 @@ class TestSimulator(unittest.TestCase):
         self.assertEqual(loc.coords.y, 0)
 
     def test_gen_inv_node_stock(self):
-        inv_prods = self.sim._gen_inv_node_stock()
+        inv_prods = self.sim._gen_inv_node_stock(self.args.max_inv_prod)
 
         # Check inventory created for every item
         self.assertEqual(len(inv_prods), self.args.num_skus)
-
+        inv_prods = sorted(inv_prods, key=lambda x: x.sku_id)
         # Verify correct quantity was created
         for sku_id, inv_prod in enumerate(inv_prods):
             self.assertEqual(inv_prod.sku_id, sku_id)

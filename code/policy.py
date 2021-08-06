@@ -13,6 +13,7 @@ class Experience:
     reward: float
     next_state: torch.Tensor = None
     is_expert: bool = False
+    gamma: float = 0.99
 
 @dataclass
 class PolicyResults:
@@ -20,10 +21,10 @@ class PolicyResults:
     exps: list[Experience]
 
 class Policy:
+    """Superclass for all policies."""
     def __init__(self, args, is_trainable=True, load_args=False):
         self.args = Namespace(**vars(args))
         self.is_trainable = is_trainable
-        print("self.args.save_dir", self.args.save_dir)
         if load_args:
             self._args_file = os.path.join(self.args.save_dir, "args.json")
             if self.args.load:

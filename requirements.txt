@@ -1,0 +1,13 @@
+matplotlib==3.3.4
+numpy==1.19.5
+pandas==1.1.5
+pygame==2.0.1
+scipy==1.5.4
+seaborn==0.11.1
+--find-links https://download.pytorch.org/whl/lts/1.8/torch_lts.html
+torch==1.8.1+cu111
+--find-links https://download.pytorch.org/whl/lts/1.8/torch_lts.html
+torchaudio==0.8.1
+--find-links https://download.pytorch.org/whl/lts/1.8/torch_lts.html
+torchvision==0.9.1+cu111
+tqdm==4.61.2

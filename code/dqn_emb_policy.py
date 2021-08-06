@@ -82,17 +82,19 @@ class DQNEmb(nn.Module):
 
         batch_size = state.shape[0]
         inv, inv_locs, demand, demand_loc, cur_fulfill, item_hot = self._extract_state(state)
-        #print("inv, inv_locs, demand, demand_loc, cur_fulfill, item_hot", inv, inv_locs, demand, demand_loc, cur_fulfill, item_hot)
         item_hot = item_hot.unsqueeze(1)
         demand = demand.unsqueeze(1)
 
+        # Get inventory node embeddings
         inv_embs = self.inv_encoder(inv, inv_locs, demand, cur_fulfill, item_hot)
         #inv_embs = inv_embs.view(batch_size, -1)
 
+        # Get demand node embedding
         demand_embs = self.demand_encoder(demand, demand_loc, item_hot)
         
         state_inp = torch.cat((inv_embs, demand_embs), 1)
-
+        
+        # Get updated invetnory node embeddings
         state_embs = self.state_enc(state_inp)
         
         x = F.relu(self._fc_1(state_embs[:, :inv_embs.shape[1]]))

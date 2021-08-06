@@ -5,7 +5,8 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
-from simulator import Simulator, InventoryProduct, DemandNode
+from simulator import Simulator  
+from nodes import  DemandNode
 from reward_manager import RewardManager
 from naive_policy import NaivePolicy
 from random_policy import RandomPolicy
@@ -19,6 +20,7 @@ from visual import Visual
 sns.set(style="darkgrid", font_scale=1.5)
 
 class EvaluationResults:
+    """Stores evaluation results for all the policies."""
     def __init__(self):
         # For all rewards
         self.rewards_dict = {}
@@ -26,13 +28,25 @@ class EvaluationResults:
         # For reward averages across episodes
         self.ep_reward_avgs_dict = {}
 
-    def add_rewards(self, policy_name: str, rewards: list[float]):
+    def add_rewards(self, policy_name: str, rewards: list):
+        """Add rewards.
+        
+        Args:
+            policy_name: the policy that produced the rewards.
+            rewards: the rewards from a fulfillment decision.
+        """
         if policy_name not in self.rewards_dict:
             self.rewards_dict[policy_name] = []
 
         self.rewards_dict[policy_name].extend(rewards)
 
-    def add_ep_rewards(self, policy_name: str, ep_rewards: list[float]):
+    def add_ep_rewards(self, policy_name: str, ep_rewards: list):
+        """Add rewards from an episode.
+        
+        Args:
+            policy_name: the policy that produced the rewards.
+            ep_rewards: the rewards from the episode.
+        """
         if policy_name not in self.ep_reward_avgs_dict:
             self.ep_reward_avgs_dict[policy_name] = []
         self.ep_reward_avgs_dict[policy_name].append(sum(ep_rewards) / len(ep_rewards))
@@ -80,7 +94,7 @@ class Evaluator:
             for inv_prod in inv_prods:
                 self.sim._inv_node_man.add_product(inv_node_id, inv_prod.copy())
 
-    def _gen_demand_nodes(self) -> list[DemandNode]:
+    def _gen_demand_nodes(self) -> list:
         """Generate list of demand nodes for an evaluation episode."""
         stock = self.sim._inv_node_man.stock
 
@@ -113,10 +127,16 @@ class Evaluator:
         return demand_nodes
 
     def _load_policies(self) -> list:
-        """Load all the policies."""
+        """Load all the policies for evaluation.
+        
+        Returns:
+            a dict str names to Policy objects.
+        """
         policies = {}
-        policies["naive"] = NaivePolicy(self.args, self.reward_man)
-        policies["random"] = RandomPolicy(self.args, self.reward_man)
+        if not self.args.no_naive_fulfill_eval:
+            policies["naive"] = NaivePolicy(self.args, self.reward_man)
+        if not self.args.no_rand_fulfill_eval:
+            policies["random"] = RandomPolicy(self.args, self.reward_man)
 
         dirs = os.listdir(self.args.policy_dir)
         for policy_dir in dirs:
@@ -129,14 +149,6 @@ class Evaluator:
 
                     with open(train_dict_path) as f:
                         train_dict = json.load(f)
-
-                        # # Copy old arguments
-                        # exempt_keys = set(self.args.exempt_load_args)
-                        # old_args = train_dict["args"]
-                        # cur_args_dict = vars(self.args)
-                        # for key, val in old_args.items():
-                        #     if key not in exempt_keys:
-                        #         cur_args_dict[key] = val
 
                         # Temporarily set the save_dir to this path
                         self.args.save_dir = policy_dir
@@ -166,7 +178,12 @@ class Evaluator:
         self.sim._reset()
         self._inv_dict = self._init_inv()
 
-    def plot_results(self, eval_results: EvaluationResults):        
+    def plot_results(self, eval_results: EvaluationResults):
+        """Plot the evaluation results.
+        
+        Args:
+            eval_results: the evaluation results.
+        """        
         # Plot the bar graphs
         fig, ax = plt.subplots(1)
         for i, policy_tuple in enumerate(eval_results.rewards_dict.items()):
@@ -214,6 +231,7 @@ class Evaluator:
             print(f"{policy_name} Std Avg Episode Reward: {np.std(rewards)}\n")
 
     def run(self):
+        """Evaluate the policies."""
         eval_results = EvaluationResults()
         for i in tqdm(range(self.args.eval_episodes)):
             # Generate demand nodes for this episode

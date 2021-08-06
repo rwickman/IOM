@@ -9,7 +9,7 @@ import torch
 from reward_manager import RewardManager
 from fulfillment_plan import FulfillmentPlan
 from policy import PolicyResults, Policy, Experience
-from simulator import InventoryNode, DemandNode, InventoryProduct
+from nodes import DemandNode, InventoryProduct
 
 class PrimalDual(Policy):
     def __init__(self, args, reward_man: RewardManager, is_expert=False):
@@ -37,8 +37,17 @@ class PrimalDual(Policy):
         self._exps = []
 
     def __call__(self, 
-            inv_nodes: list[InventoryNode],
+            inv_nodes: list,
             demand_node: DemandNode) -> PolicyResults:
+        """Create a fulfillment decision for the DemandNode using the primal-dual policy.
+        
+        Args:
+            list of InventoryNodes.
+            deamnd_node: the DeamndNode representing the current order.
+        
+        Returns:
+            the fulfillment decision results.
+        """
         # Add initial inventory
         if self._init_inv is None:
             self._init_inv = torch.zeros((self.args.num_inv_nodes, self.args.num_skus))
@@ -105,7 +114,7 @@ class PrimalDual(Policy):
         return PolicyResults(fulfill_plan, exps)
 
     def train(self):
-        # Update the dual lambda values
+        """Update the dual lambda values."""
         for exp in self._exps:
             denom = self._alpha_1 * max(self._init_inv[exp.action, exp.state], 1) + self._alpha_2
             
@@ -118,16 +127,18 @@ class PrimalDual(Policy):
         self._init_inv = None    
 
     def is_train_ready(self) -> bool:
+        """Check if variables are ready to get updated."""
         return len(self._exps) > 0
 
     def save(self):
-        print("SAVING")
+        """Save the dual variables."""
         model_dict = {
             "dual_lams" : self._dual_lams
         }
         torch.save(model_dict, self._model_file)
         
     def load(self):
+        """Load the dual variables."""
         model_dict = torch.load(self._model_file)
         self._dual_lams = model_dict["dual_lams"] 
 

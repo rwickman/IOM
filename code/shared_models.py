@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class DemandEncoder(nn.Module):
+    """Encodes demand node state as an embedding."""
     def __init__(self, args):
         super().__init__()
         self.args = args
@@ -16,6 +17,7 @@ class DemandEncoder(nn.Module):
                 demand: torch.tensor,
                 demand_loc: torch.tensor,
                 item_hot: torch.tensor):
+        """Get demand embedding from node info."""
         # Get the total sum of demand that is requested
         demand_totals = demand.sum(axis=-1)
 
@@ -29,6 +31,7 @@ class DemandEncoder(nn.Module):
         return demand_embs
 
 class InvEncoder(nn.Module):
+    """Encodes inventory node state as an embedding."""
     def __init__(self, args):
         super().__init__()
         self.args = args
@@ -47,7 +50,7 @@ class InvEncoder(nn.Module):
                 cur_fulfill: torch.Tensor,
                 item_hot:torch.Tensor):
         """Get inventory embedding from node info."""
-        batch_size = demand.shape[0]
+
         # Get total amount of inventory
         inv_totals = inv.sum(axis = -1).unsqueeze(2)
 

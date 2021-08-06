@@ -1,4 +1,4 @@
-from simulator import InventoryProduct, Inventory
+from nodes import InventoryProduct, Inventory
 
 class Fulfillment:
     """A fulfillment request for a single inventory node."""
@@ -27,12 +27,20 @@ class FulfillmentPlan:
         self._inv = Inventory()
 
     def add_product(self, inv_node_id: str, inv_prod: InventoryProduct):
+        """Add products to be fulfilled by a given inventory node.
+        
+        Args:
+            inv_node_id: unqiue integer ID of inventory node.
+            inv_prod: InventoryProduct that indentifies a SKU and the quantity to be fulfilled.
+        """
         if inv_node_id is None:
             raise Exception("Invalid inventory node ID.")
 
+        # Add to dict
         if inv_node_id not in self._fulfillments:
             self._fulfillments[inv_node_id] = Fulfillment(inv_node_id)
         
+        # Add to existing list of fulfillments
         self._fulfillments[inv_node_id].inv.add_product(inv_prod)
         
         # Keep up with all items in an order
@@ -40,6 +48,12 @@ class FulfillmentPlan:
         
 
     def remove_product(self, inv_node_id: str, inv_prod: InventoryProduct):
+        """Remove products to be fulfilled by a given inventory node.
+        
+        Args:
+            inv_node_id: unqiue integer ID of inventory node.
+            inv_prod: InventoryProduct that indentifies a SKU and the quantity to be fulfilled.
+        """
         if inv_node_id is None or inv_node_id not in self._fulfillments:
             raise Exception("Invalid inventory node ID.")
         

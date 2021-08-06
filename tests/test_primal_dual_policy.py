@@ -48,7 +48,7 @@ class TestSimulator(unittest.TestCase):
         for i in range(len(results.exps)):
             self.assertEqual(results.exps[i].state, fake_ep.sku_ids[i])
             self.assertEqual(results.exps[i].action, expected_actions[i])
-            self.assertEqual(results.exps[i].reward, expected_rewards[i])
+            self.assertEqual(results.exps[i].reward, expected_rewards[i] * self.reward_man._reward_scale_factor)
 
 
 
