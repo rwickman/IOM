@@ -151,6 +151,8 @@ python code/main.py --inv_loc data/loc_1.json --num_skus 2 --num_inv_nodes 2 --e
 
 
 ### 5 Inventory Node 8 SKU DQNEmb
+Running the DQNEmb approach on 5 inventory nodes and 8 SKUs.
+
 Create the directory for the policies:
 ```code
 mkdir policies_loc_4
@@ -167,7 +169,7 @@ python code/main.py --inv_loc data/loc_4.json --city_loc data/cities_3.json --nu
 
 Evaluate:
 ```code
-py main.py --inv_loc data/loc_4.json --city_loc data/cities_3.json --num_skus 8 --num_inv_nodes 5 --eval --eval_episodes 32 --max_inv_prod 20 --policy_dir policies_loc_4 --rand_max_prod --rand_inv_sku_lam
+py code/main.py --inv_loc data/loc_4.json --city_loc data/cities_3.json --num_skus 8 --num_inv_nodes 5 --eval --eval_episodes 32 --max_inv_prod 20 --policy_dir policies_loc_4 --rand_max_prod --rand_inv_sku_lam
 ```
 
 
@@ -298,4 +300,4 @@ This project is licensed under the < INSERT LICENSE NAME > - see the [LICENSE](L
 
 * Hat tip to anyone whose code was used
 * Inspiration
-* etc --> -->
+* etc -->
