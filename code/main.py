@@ -4,7 +4,6 @@ from simulator import Simulator
 from naive_policy import NaivePolicy
 from dqn_policy import DQNTrainer
 from dqn_emb_policy import DQNEmbTrainer
-from dqn_att_policy import DQNAttTrainer
 from actor_critic_policy import ActorCriticPolicy
 from primal_dual_policy import PrimalDual
 from reward_manager import RewardManager
