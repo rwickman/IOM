@@ -333,4 +333,7 @@ ASALocalRun/
 # Code coverage report data files
 coveragetool
 reports/
-*.cobertura.xml
+*.cobertura.xm
+
+
+code/util/ecommerce/archive/*
