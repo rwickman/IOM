@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import matplotlib as mpl
+from scipy import stats
 
 sns.set(style="darkgrid", font_scale=1.1)
 DEFAULT_MARKER_SIZE = mpl.rcParams["lines.markersize"] ** 2
@@ -97,15 +98,16 @@ def get_products():
     print(labels)
     fig, ax = plt.subplots(1)
     
-    # ax.hist(labels, bins=len(levels), color="blue")
+    ax.hist(labels, bins=len(levels), color="blue")
     values, counts = np.unique(p_ids.to_numpy(), return_counts=True)
-    sns.barplot(x=values, y=counts)
+    #sns.barplot(x=values, y=counts)
     ax.set(xlabel="Product ID", ylabel="Number of times in Order")
     ax.set_title("Product Histogram", fontsize=24)
     plt.savefig("figures/product_hist.png")
     _, counts = np.unique(p_ids.to_numpy(), return_counts=True)
-    print(counts.mean(), counts.std(), counts.min(), counts.max(), counts.median())
-
+    print(counts.mean(), counts.std(), counts.min(), counts.max(), np.median(counts))
+    print(np.quantile(counts, 0.25), np.quantile(counts, 0.5), np.quantile(counts, 0.75))
+    print(stats.mode(counts))
 #plot_order_hist(df)
 #plot_customer_loc()
 get_products()
