@@ -9,6 +9,7 @@ from primal_dual_policy import PrimalDual
 from reward_manager import RewardManager
 from evaluator import Evaluator
 from visual import Visual
+from dataset_simulation import DatasetSimulation
 
 def main(args):
     reward_man = RewardManager(args)
@@ -22,6 +23,13 @@ def main(args):
         eval = Evaluator(args, reward_man, sim, visual)
         eval.run()
     else:
+        if args.use_dataset:
+            dataset_sim = DatasetSimulation()
+            print("dataset_sim.num_skus: ", dataset_sim.num_skus)
+            args.num_skus = dataset_sim.num_skus
+        else:
+            dataset_sim = None
+
         # Create the policy
         if args.policy == "naive":
             policy = NaivePolicy(args, reward_man)
@@ -40,8 +48,8 @@ def main(args):
             raise Exception("Invalid policy name.")
 
         # Create the simulator
-        sim = Simulator(args, policy)
-
+        sim = Simulator(args, policy, dataset_sim)
+        
         # Run the simulation
         sim.run()
 
@@ -88,6 +96,9 @@ if __name__ == "__main__":
                     help="Max number of orders in an episode during training.")
     sim_args.add_argument("--eval_order_max", type=int, default=None,
                     help="Max number of orders in an episode during evaluation.")
+
+    sim_args.add_argument("--use_dataset", action="store_true",
+                    help="Use a dataset to generate demand.")
 
     parser.add_argument("--reward_alpha", type=float, default=0.5,
                     help="Reward item discount.")
@@ -209,7 +220,7 @@ if __name__ == "__main__":
                     help="Number of epochs to train batch of episodes")
     ac_args.add_argument("--critic_lam", type=float, default=0.5,
                     help="Critic loss weighting")
-    ac_args.add_argument("--min_exps", type=int, default=1024,
+    ac_args.add_argument("--min_exps", type=int, default=4096,
                     help="The minimum number of timesteps to run before training over stored experience.")
     ac_args.add_argument("--ppo_clip", type=float, default=0.2,
                     help="PPO surrogate loss clipping.")

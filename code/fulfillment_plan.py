@@ -4,7 +4,7 @@ class Fulfillment:
     """A fulfillment request for a single inventory node."""
     def __init__(self,
                 inv_node_id: str,
-                inv_prods: list[InventoryProduct] = None):
+                inv_prods: list = None):
 
         self._inv_node_id = inv_node_id
         self._inv = Inventory(inv_prods)

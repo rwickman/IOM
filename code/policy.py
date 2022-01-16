@@ -18,7 +18,7 @@ class Experience:
 @dataclass
 class PolicyResults:
     fulfill_plan: FulfillmentPlan
-    exps: list[Experience]
+    exps: list
 
 class Policy:
     """Superclass for all policies."""

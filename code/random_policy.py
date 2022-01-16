@@ -11,7 +11,7 @@ class RandomPolicy(Policy):
         self._reward_man = reward_man
     
     def __call__(self,
-                inv_nodes: list[InventoryNode],
+                inv_nodes: list,
                 demand_node: DemandNode) -> PolicyResults:
         """Create a fulfillment decision for the DemandNode using a random policy.
         

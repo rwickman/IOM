@@ -11,7 +11,7 @@ from nodes import *
 
 class Simulator:
     """Simulator for simulating omni-channel order fulfillment. """
-    def __init__(self, args, policy=None):
+    def __init__(self, args, policy=None, dataset_sim=None):
         """Initilize the simulator.
         
         Args:
@@ -19,6 +19,7 @@ class Simulator:
             policy: Policy that represents the algorithm to make order fulfillment decisions.
         """
         self.args = args
+        self._dataset_sim = dataset_sim
 
         self._train_dict = {
             "policy_name" : self.args.policy,
@@ -44,6 +45,9 @@ class Simulator:
             self._policy = None
 
         self._init_inv_nodes()
+
+        if self._dataset_sim is not None:
+            self._dataset_sim.init_sku_distr(self._inv_node_man.stock)
 
     def _init_inv_nodes(self):
         """initialize the inventory nodes."""
@@ -76,6 +80,7 @@ class Simulator:
 
     def _reset(self):
         """Reset simulator for next episode"""
+        print("CALLED RESET")
         # Check if inventory is still left
         if self._inv_node_man.inv.inv_size > 0 and not self.args.eval:
             # Indicate to the policy that 
@@ -86,6 +91,10 @@ class Simulator:
 
         # Restock the inventory in the inventory nodes
         self._restock_inv()
+
+        if self._dataset_sim is not None:
+            # Reset the SKU distribution 
+            self._dataset_sim.init_sku_distr(self._inv_node_man.stock)
 
         # Reset policy for new episode
         if self._policy:
@@ -366,7 +375,11 @@ class Simulator:
                 if self._inv_node_man.inv.inv_size <= 0:
                     break
 
-                demand_node = self._gen_demand_node()
+                if self._dataset_sim is not None:
+                    demand_node = self._dataset_sim.gen_demand_node(
+                        self._inv_node_man.inv._inv_dict)
+                else:
+                    demand_node = self._gen_demand_node()
 
                 # Get the fulfillment plan
                 policy_results = self._policy(self._inv_nodes, demand_node)

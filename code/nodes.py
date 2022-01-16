@@ -155,11 +155,11 @@ class InventoryNode(Node):
 
 class InventoryNodeManager:
     """Manage the total inventory over all the inventory nodes."""
-    def __init__(self, inv_nodes: list[InventoryNode]): 
+    def __init__(self, inv_nodes: list): 
         self._inv_nodes_dict = {}
         self._init_inv(inv_nodes)
         
-    def _init_inv(self, inv_nodes: list[InventoryNode]):
+    def _init_inv(self, inv_nodes: list):
         """Create an Inventory object that accumulates inventory accross all nodes."""
         inv_prods = []
         for inv_node in inv_nodes:

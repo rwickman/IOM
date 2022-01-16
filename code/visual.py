@@ -71,7 +71,7 @@ FULFILL_FRAME_DELAY = 3
 # ICON_SCALE = 0.01
 
 class Visual:
-    def __init__(self, args, inv_nodes: list[InventoryNode]):
+    def __init__(self, args, inv_nodes: list):
         self.args = args
         self._inv_nodes = inv_nodes
 
@@ -117,7 +117,7 @@ class Visual:
         self._timestep = 0
     
     def _sim_to_screen(self,
-                    pos: list[float, float]) -> list[float, float]:    
+                    pos: list) -> list:    
         """Transform simulator position to screen position."""          
         for i in range(2):
             # Scale to [0,1] range
@@ -132,7 +132,7 @@ class Visual:
         return pos
 
 
-    def _render_icon(self, sku_id: int, pos: tuple[float, float]):
+    def _render_icon(self, sku_id: int, pos: tuple):
             """Render an icon."""
             if sku_id == 0:
                 self.screen.blit(self.icons["shirt"], pos)
@@ -143,8 +143,8 @@ class Visual:
 
         
     def _create_node_text_info(self,
-                            inv_prods: list[InventoryProduct],
-                            node_pos: list[float, float],
+                            inv_prods: list,
+                            node_pos: list,
                             inv_node_id=None) -> list:
         """Create info for node."""
         text_els = []

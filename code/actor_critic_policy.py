@@ -289,10 +289,10 @@ class ActorCriticPolicy(RLPolicy):
         return actor_loss, critic_loss
 
     def advs_and_returns(self,
-        rewards: list[float],
-        val_preds: list[float],
-        next_states: list[torch.Tensor],
-        scale_advs=True):
+        rewards: list,
+        val_preds: list,
+        next_states: list,
+        scale_advs=True) -> tuple:
         """Compute the advanatages and returns for an episode ."""
         with torch.no_grad():
             returns = torch.zeros_like(rewards, dtype=torch.float32).to(device)
@@ -330,7 +330,7 @@ class ActorCriticPolicy(RLPolicy):
         self._exp_buffer.num_ep += 1
 
     def __call__(self, 
-                inv_nodes: list[InventoryNode],
+                inv_nodes: list,
                 demand_node: DemandNode,
                 argmax=False) -> PolicyResults:
         results = super().__call__(

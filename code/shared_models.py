@@ -39,7 +39,6 @@ class InvEncoder(nn.Module):
         self.inv_inp_size = 1 + 1 + 1 + 1 + 2
 
         # self.inv_inp_size + cur item quantity + total demand quantity left  
-        
         self._inv_emb_fc_1 = nn.Linear(self.inv_inp_size, self.args.emb_size)
         self._inv_emb_fc_2 = nn.Linear(self.args.emb_size, self.args.emb_size)
 
@@ -50,7 +49,6 @@ class InvEncoder(nn.Module):
                 cur_fulfill: torch.Tensor,
                 item_hot:torch.Tensor):
         """Get inventory embedding from node info."""
-
         # Get total amount of inventory
         inv_totals = inv.sum(axis = -1).unsqueeze(2)
 

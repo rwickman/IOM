@@ -327,7 +327,7 @@ class DQNTrainer(RLPolicy):
         return q_values
 
     def __call__(self, 
-                inv_nodes: list[InventoryNode],
+                inv_nodes: list,
                 demand_node: DemandNode,
                 argmax=False) -> PolicyResults:
         
@@ -344,7 +344,7 @@ class DQNTrainer(RLPolicy):
         return results
 
     def compute_return(self,
-        rewards: list[float]):
+        rewards: list) -> torch.Tensor:
         """Compute the return for an episode."""
         with torch.no_grad():
             returns = torch.zeros_like(rewards, dtype=torch.float32).to(device)
