@@ -1,17 +1,29 @@
 import pandas as pd
 import numpy as np
+import random
+import torch
+from config import device
 
 from nodes import Location, Coordinates, InventoryProduct, DemandNode
 
-class DatasetSimulation:
+class DatasetSimulator:
     def __init__(self,
+                args,
                 loc_csv = "data/olist_data/location/demand_locs.csv",
                 inv_node_loc_csv="data/olist_data/location/inv_node_locs.csv",
                 orders_csv="data/olist_data/orders/train_orders.csv"):
+        self.args = args
         self._loc_df = pd.read_csv(loc_csv)
         self._inv_node_loc_df = pd.read_csv(inv_node_loc_csv)
         self._orders =  pd.read_csv(orders_csv)
         self._init_demand()
+        self._coord_bounds = max(
+            abs(self._loc_df["geolocation_lat"].min()),
+            abs(self._loc_df["geolocation_lat"].max()),
+            abs(self._loc_df["geolocation_lng"].min()),
+            abs(self._loc_df["geolocation_lng"].max()))
+
+
 
     def _init_demand(self):
         """Initialize properties of the demand."""
@@ -21,11 +33,15 @@ class DatasetSimulation:
         
         # Create the PID distribution
         pid_count = self._orders["product_id"].value_counts()
-        self._pid_distr = pid_count / pid_count.sum()
-        self._cur_sku_distr = self._pid_distr.copy()
+        self._sku_distr = torch.tensor(pid_count / pid_count.sum())
+        self._cur_sku_distr = self._sku_distr.clone()
 
         # Number of SKUs
-        self.num_skus = len(self._pid_distr)
+        self.num_skus = len(self._sku_distr)
+
+        self._cur_stock_max = random.randint(1, self.args.ds_max_stock)
+        #print("self._cur_stock_max", self._cur_stock_max)
+    
 
     def init_sku_distr(self, stock: list):
         """Reset the SKU distribution
@@ -34,17 +50,20 @@ class DatasetSimulation:
             stock: list of aggregate InventoryProducts in all the InventoryNodes. 
         """
         self._total_stock = 0
-        self._cur_sku_distr = np.zeros_like(self._pid_distr.copy())
+        self._cur_sku_distr = torch.zeros_like(self._sku_distr)
         
         # Get the probability for each item in the inventory
         for item in stock:
             assert item.quantity > 0
-            self._cur_sku_distr[item.sku_id] = self._pid_distr[item.sku_id]
+            self._cur_sku_distr[item.sku_id] = self._sku_distr[item.sku_id]
             self._total_stock += item.quantity
         
         # Compute the new probability based on normalizing over the available products
         self._normalize_sku_distr()
 
+
+        self._cur_stock_max = random.randint(self.args.ds_min_stock, self.args.ds_max_stock)
+        # print("self._cur_stock_max", self._cur_stock_max)
     
     def sample_loc(self) -> Location:
         """Sample a location from dataset."""
@@ -60,7 +79,10 @@ class DatasetSimulation:
         return loc_sample
     
     def _normalize_sku_distr(self):
-        self._cur_sku_distr = self._cur_sku_distr / self._cur_sku_distr.sum()
+        distr_sum = self._cur_sku_distr.sum()
+        if float(distr_sum) > 0:
+            self._cur_sku_distr = self._cur_sku_distr / distr_sum
+
 
     def gen_demand_node(self, inv_dict: dict) -> DemandNode:
         
@@ -81,7 +103,7 @@ class DatasetSimulation:
         demand_prods_dict = {}
         
         for i in range(order_size):
-            # Sample an item
+            # Sample a product
             item_idx = np.random.choice(len(self._cur_sku_distr), p=self._cur_sku_distr)
             
             # Verify it valid inventory
@@ -106,5 +128,31 @@ class DatasetSimulation:
             if cur_demand_dict[item_idx] == inv_dict[item_idx]:
                 self._cur_sku_distr[item_idx] = 0.0
                 self._normalize_sku_distr()
-        print("GEN DEMAND: ", demand_prods_dict.values())
-        return DemandNode(demand_prods_dict.values(), loc)
+
+        return DemandNode(demand_prods_dict.values(), loc, self.num_skus)
+    
+    def gen_inv_node_stock(self):
+        """Use SKU distribution to sample the stock for an inventory node."""
+        num_stock = random.randint(min(self.args.ds_min_stock, self._cur_stock_max), self._cur_stock_max)
+        
+        stock_dict = {}
+        for i in range(num_stock):
+            # Sample a product
+            #item_idx = np.random.choice(len(self._sku_distr), p=self._sku_distr)
+            item_idx = np.random.choice(len(self._sku_distr), p=self._sku_distr)
+
+            if item_idx not in stock_dict:
+                stock_dict[item_idx] = InventoryProduct(item_idx, 1)
+            else:
+                stock_dict[item_idx].quantity += 1
+        
+        # print("num_stock", num_stock, "len(stock_dict)", len(stock_dict))
+        return stock_dict.values()
+    
+    @property
+    def cur_sku_distr(self):
+        return self._cur_sku_distr.float().to(device)
+            
+            
+
+            

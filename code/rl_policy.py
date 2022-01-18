@@ -55,7 +55,8 @@ class RLPolicy(Policy, ABC):
                 demand: torch.Tensor,
                 demand_loc: torch.Tensor,
                 cur_fulfill: torch.Tensor,
-                item_hot: torch.Tensor) -> torch.Tensor:
+                item_hot: torch.Tensor,
+                sku_distr) -> torch.Tensor:
         """Create the normalized state from the given state elements.
         
         
@@ -86,6 +87,7 @@ class RLPolicy(Policy, ABC):
     def __call__(self,
                 inv_nodes: list,
                 demand_node: DemandNode,
+                sku_distr: torch.Tensor,
                 argmax=False) -> PolicyResults:
         """Create a fulfillment decision for the DemandNode using a RL based policy.
         
@@ -108,16 +110,18 @@ class RLPolicy(Policy, ABC):
         for inv_node in inv_nodes:
             inv_locs[inv_node.inv_node_id, 0] = inv_node.loc.coords.x
             inv_locs[inv_node.inv_node_id, 1] = inv_node.loc.coords.y
-            for sku_id in range(self.args.num_skus):
-                inv[inv_node.inv_node_id, sku_id] = inv_node.inv.product_quantity(sku_id)
+            inv[inv_node.inv_node_id] = torch.tensor(inv_node.inv.inv_list).to(device)
+            # for sku_id in range(self.args.num_skus):
+            #     inv[inv_node.inv_node_id, sku_id] = inv_node.inv.product_quantity(sku_id)
 
         # Create demand vector
         demand_loc = torch.zeros(2).to(device)
         demand_loc[0] = demand_node.loc.coords.x
         demand_loc[1] = demand_node.loc.coords.y
-        demand = torch.zeros(self.args.num_skus).to(device)
-        for sku_id in range(self.args.num_skus):
-            demand[sku_id] = demand_node.inv.product_quantity(sku_id)
+        # demand = torch.zeros(self.args.num_skus).to(device)
+        demand = torch.tensor(demand_node.inv.inv_list).to(device)
+        # for sku_id in range(self.args.num_skus):
+        #     demand[sku_id] = demand_node.inv.product_quantity(sku_id)
    
         # Keep up with fulfillment requests for every inventory node
         fulfill_plan = FulfillmentPlan()
@@ -138,7 +142,8 @@ class RLPolicy(Policy, ABC):
                     demand,
                     demand_loc,
                     cur_fulfill,
-                    item_hot)
+                    item_hot,
+                    sku_distr)
                                 
                 if i != 0 or j != 0:
                     # Update the previous experience next state

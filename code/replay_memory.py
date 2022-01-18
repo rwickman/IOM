@@ -93,8 +93,9 @@ class PrioritizedExpReplay:
         # Compute importance sampling weights
         sample_ps = priorities / self._sum_tree.total()
         
-        # Increase per beta by the number of episodes that have elapsed
-        cur_per_beta = min((train_step / self.args.train_iter)/self.args.episodes, 1) * (1-self.args.per_beta) + self.args.per_beta
+        # Increase per beta by the number of training steps that have elapsed
+        #cur_per_beta = min((train_step / self.args.train_iter)/self.args.episodes, 1) * (1-self.args.per_beta) + self.args.per_beta
+        cur_per_beta = min(train_step/self.args.decay_steps, 1) * (1-self.args.per_beta) + self.args.per_beta
 
         is_ws = (sample_ps  * self.cur_cap()) ** -cur_per_beta
 

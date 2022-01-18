@@ -15,6 +15,7 @@ from dqn_emb_policy import DQNEmbTrainer
 from primal_dual_policy import PrimalDual
 from actor_critic_policy import ActorCriticPolicy
 from visual import Visual
+from dataset_simulator import DatasetSimulator
 
 sns.set(style="darkgrid", font_scale=1.5)
 
@@ -56,12 +57,14 @@ class Evaluator:
                 args,
                 reward_man: RewardManager,
                 sim: Simulator,
+                dataset_sim: DatasetSimulator = None,
                 visual: Visual = None):
 
         self.args = args
         self.reward_man = reward_man    
         self.sim = sim
         self.visual = visual
+        self.dataset_sim = dataset_sim
 
         # Remove reward scaling
         self.reward_man._reward_scale_factor = 1
@@ -104,10 +107,11 @@ class Evaluator:
         while len(stock) > 0:
             if self.args.eval_order_max and len(demand_nodes) >= self.args.eval_order_max:
                 break
-            
 
             demand_node = self.sim._gen_demand_node(stock)
             demand_nodes.append(demand_node)
+            # TODO: FIX THIS TO USE DatasetSimulator
+            ## Will have to fix gen_demand_node in DS because it updates the demand probs along side
 
             # Update stock
             for inv_prod in demand_node.inv.items():
@@ -233,17 +237,20 @@ class Evaluator:
             # Generate demand nodes for this episode
             demand_nodes = self._gen_demand_nodes()
             for policy_name, policy in self._policies.items():
-
+                print("policy_name", policy_name)
                 # Run an episode
                 ep_rewards = []
 
                 for demand_node in demand_nodes:
                     # Get order results for policy
                     if "dqn" in policy_name:
-                        policy_results = policy(self.sim._inv_nodes, demand_node, argmax=True)
+                        if self.dataset_sim is not None:
+                            policy_results = policy(self.sim._inv_nodes, demand_node, self.dataset_sim.cur_sku_distr, argmax=True)
+                        else:
+                            policy_results = policy(self.sim._inv_nodes, demand_node, argmax=True)
                     else:
                         policy_results = policy(self.sim._inv_nodes, demand_node)
-
+  
                     if self.visual:
                         self.visual.render_order(demand_node, policy_results, policy_name)
 

@@ -89,7 +89,7 @@ class PointWiseFFN(nn.Module):
         self.fc2 = nn.Linear(self.args.dff, self.args.emb_size)
 
     def forward(self, x):
-        pw_out = F.relu(self.fc1(x))
+        pw_out = F.gelu(self.fc1(x))
         pw_out = self.fc2(pw_out)
 
         return pw_out
@@ -164,15 +164,24 @@ class Encoder(nn.Module):
         super().__init__()
         self.args = args
         
-        self.enc_layers = nn.ModuleList([EncoderLayer(self.args) for _ in range(num_enc_layers)])
+        #self.enc_layers = nn.ModuleList([EncoderLayer(self.args) for _ in range(num_enc_layers)])
+
+        self.enc_layers = nn.ModuleList([
+            nn.TransformerEncoderLayer(
+                d_model=self.args.emb_size,
+                dim_feedforward=self.args.dff,
+                activation="gelu",
+                nhead=self.args.num_heads,
+                dropout=self.args.drop_rate) 
+            for _ in range(num_enc_layers)])
         
         self.dropout = nn.Dropout(self.args.drop_rate)
     
         self.pos_enc = positional_encoding(self.args.max_pos_enc, self.args.emb_size)
 
     def forward(self, x, enc_padding_mask=None):
-
-        x = x * torch.sqrt(torch.tensor(self.args.emb_size, dtype=torch.float32))
+        #print("torch.sqrt(torch.tensor(self.args.emb_size, dtype=torch.float32))", torch.sqrt(torch.tensor(self.args.emb_size, dtype=torch.float32)))
+        #x = x * torch.sqrt(torch.tensor(self.args.emb_size, dtype=torch.float32))
         #x = x + self.pos_enc[:, :x.shape[1], :]
         x = self.dropout(x)
 

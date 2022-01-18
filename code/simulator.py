@@ -5,7 +5,7 @@ import json
 import os
 import math
 from scipy.stats import beta
-
+from config import device
 from nodes import *
 
 
@@ -76,11 +76,10 @@ class Simulator:
 
             self._inv_nodes.append(inv_node)
 
-        self._inv_node_man = InventoryNodeManager(self._inv_nodes)
+        self._inv_node_man = InventoryNodeManager(self._inv_nodes, self.args.num_skus)
 
     def _reset(self):
         """Reset simulator for next episode"""
-        print("CALLED RESET")
         # Check if inventory is still left
         if self._inv_node_man.inv.inv_size > 0 and not self.args.eval:
             # Indicate to the policy that 
@@ -118,9 +117,12 @@ class Simulator:
         inv_node_id = len(self._inv_nodes)
 
         # Generate the inventory for this node
-        inv_prods = self._gen_inv_node_stock(self.args.max_inv_prod)
+        if self._dataset_sim is not None:
+            inv_prods = self._dataset_sim.gen_inv_node_stock()
+        else:
+            inv_prods = self._gen_inv_node_stock(self.args.max_inv_prod)
 
-        return InventoryNode(inv_prods, loc, inv_node_id)
+        return InventoryNode(inv_prods, loc, inv_node_id, self.args.num_skus)
 
     def _gen_inv_node_stock(self, max_inv_prod: int, inv_sku_lam: float = None) -> list:
         """Generate inventory for an inventory node.
@@ -192,7 +194,12 @@ class Simulator:
             inv_sku_lam = None
         
         for i in range(self.args.num_inv_nodes):
-            inv_prods = self._gen_inv_node_stock(max_inv_prod, inv_sku_lam)
+            if self._dataset_sim is not None:
+                inv_prods = self._dataset_sim.gen_inv_node_stock()
+            else:
+                inv_prods = self._gen_inv_node_stock(max_inv_prod, inv_sku_lam)
+                
+                
             for inv_prod in inv_prods:
                 self._inv_node_man.add_product(i, inv_prod)
 
@@ -238,8 +245,8 @@ class Simulator:
             num_demand = min(num_demand, item.quantity)
 
             inv_prods.append(InventoryProduct(item.sku_id, num_demand))
-        
-        return DemandNode(inv_prods, loc)
+
+        return DemandNode(inv_prods, loc, self.args.num_skus)
 
 
     def _sample_circle_point(self):
@@ -369,12 +376,14 @@ class Simulator:
 
     def run(self):
         """Run the simulator for self.args.episodes episodes."""
+        import time
         for e_i in range(self.args.episodes):
             rewards = []
             for t in range(self.args.order_max):
                 if self._inv_node_man.inv.inv_size <= 0:
                     break
 
+                start_time = time.time()
                 if self._dataset_sim is not None:
                     demand_node = self._dataset_sim.gen_demand_node(
                         self._inv_node_man.inv._inv_dict)
@@ -382,12 +391,20 @@ class Simulator:
                     demand_node = self._gen_demand_node()
 
                 # Get the fulfillment plan
-                policy_results = self._policy(self._inv_nodes, demand_node)
-
+                if self._dataset_sim:
+                    policy_results = self._policy(self._inv_nodes, demand_node, self._dataset_sim.cur_sku_distr)
+                else:
+                    policy_results = self._policy(self._inv_nodes, demand_node, torch.tensor([1/self.args.num_skus]).repeat(self.args.num_skus))
                 self.remove_products(policy_results)
-                
+
                 rewards.extend(
                     [exp.reward for exp in policy_results.exps])
+
+                # Train if this is a trainable policy
+                if self._policy.is_trainable and self._policy.is_train_ready() and t % self.args.train_iter == 0:
+                    loss = self._policy.train()
+
+                    self._train_dict["policy_losses"].append(loss)
 
             # Reset the simulator for the next episode
             self._reset()
@@ -400,13 +417,23 @@ class Simulator:
             print(e_i, "avg_reward", avg_reward, t)
 
             self._train_dict["ep_avg_rewards"].append(avg_reward)
-
+    
+            if e_i % self.args.save_iter == 0:
+                print("SAVING MODEL")
+                self._policy.save()
+                self._save()
             # Train if this is a trainable policy
-            if self._policy.is_trainable and self._policy.is_train_ready():
-                for i in range(self.args.train_iter):
-                    loss = self._policy.train()
+            # if self._policy.is_trainable and self._policy.is_train_ready():
+            #     for i in range(self.args.train_iter):
+            #         loss = self._policy.train()
 
-                self._train_dict["policy_losses"].append(loss)
+            #     self._train_dict["policy_losses"].append(loss)
+
+            #     if e_i % self.args.save_iter == 0:
+            #         print("SAVING MODEL")
+            #         self._policy.save()
+            #         self._save()
+
 
         # Save the policy
         if self._policy.is_trainable:

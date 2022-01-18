@@ -6,6 +6,7 @@ from reward_manager import RewardManager
 from dqn_policy import DQNTrainer
 from transformer import Encoder, Decoder
 from shared_models import DemandEncoder, InvEncoder
+from nodes import DemandNode
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -17,6 +18,71 @@ class DQNEmbTrainer(DQNTrainer):
         return DQNEmb(self.args).to(device)
 
 
+    def _get_valid_actions(self, state: torch.Tensor) -> torch.Tensor:
+        """Get valid actions for the current state vector."""
+        # Get the cur_item_quantity from the state vector
+        cur_item_quantity = state[self.args.num_inv_nodes:self.args.num_inv_nodes*2]
+
+        # Get the ones that are nonzero
+        valid_actions = (cur_item_quantity > 0).nonzero().flatten()
+
+        return valid_actions
+
+
+    def _create_state(self,
+                inv: torch.Tensor,
+                inv_locs: torch.Tensor,
+                demand: torch.Tensor,
+                demand_loc: torch.Tensor,
+                cur_fulfill: torch.Tensor,
+                item_hot: torch.Tensor,
+                sku_distr: torch.Tensor) -> torch.Tensor:
+        """Create state for input into model"""
+
+        # Scale features
+        #inv = inv / self._hyper_dict["max_inv_prod"]
+        inv_locs = inv_locs.flatten() / self._hyper_dict["coord_bounds"]
+        #demand = demand / self._hyper_dict["max_inv_prod"]
+        demand_loc = demand_loc.flatten() / self._hyper_dict["coord_bounds"]
+        #cur_fulfill = cur_fulfill / self._hyper_dict["max_inv_prod"]
+        sku_distr = torch.log(sku_distr + 1e-16)
+        
+
+        # Total amount of inventory
+        inv_totals = inv.sum(axis = -1)
+
+
+        # Get total number of products currently getting fulfilled in the order
+        cur_fulfill_totals = cur_fulfill.sum(axis=-1)
+
+        # Get quantity of current product
+        cur_item_quantity = (item_hot * inv).sum(axis=-1)
+
+        # Get number of products each inventory node could fulfill
+        num_potential_fulfill = torch.min(
+            inv, demand.repeat(inv.shape[0], 1)).sum(axis=-1)
+
+        # Get the total sum of demand that is requested
+        demand_totals = demand.sum(axis=-1).unsqueeze(0)
+        
+        # Get demand for current item only
+        demand_quantity = (item_hot * demand).sum(axis=-1).unsqueeze(0)
+
+        # Get the probability of this item getting ordered
+        demand_prob = (item_hot * sku_distr).sum(axis=-1).unsqueeze(0)
+
+        # Concatenate together
+        return torch.cat((
+            cur_fulfill_totals,
+            cur_item_quantity,
+            inv_totals,
+            inv_locs,
+            num_potential_fulfill,
+            demand_totals,
+            demand_quantity,
+            demand_loc, 
+            demand_prob))
+
 class DQNEmb(nn.Module):
     def __init__(self, args):
         super().__init__()
@@ -27,9 +93,7 @@ class DQNEmb(nn.Module):
         self.inv_encoder = InvEncoder(self.args)
         self.demand_encoder = DemandEncoder(self.args)
         
-        # Inv embs + cur Item demand + total demand + loc
-        self.inp_size = self.args.emb_size * (self.args.num_inv_nodes + 1)
-
+        self.inp_size = 5 + 6 * self.args.num_inv_nodes
 
         self.state_enc = Encoder(self.args, self.args.num_enc_layers)
 
@@ -48,62 +112,86 @@ class DQNEmb(nn.Module):
         """
         batch_size = state.shape[0]
         
-        # Split into parts
-        inv_end = self.args.num_inv_nodes * self.args.num_skus
-        inv = state[:, :inv_end].reshape(
-            batch_size, self.args.num_inv_nodes, self.args.num_skus)
+        # Unwrap the state
+        cur_end_idx = 0
+        cur_fulfill_totals = state[:, :self.args.num_inv_nodes].unsqueeze(2)
+        cur_end_idx += self.args.num_inv_nodes
+        
+        cur_item_quantity = state[:, cur_end_idx:cur_end_idx+self.args.num_inv_nodes].unsqueeze(2)
+        cur_end_idx += self.args.num_inv_nodes
+        
+        inv_totals = state[:, cur_end_idx:cur_end_idx+self.args.num_inv_nodes].unsqueeze(2)
+        cur_end_idx += self.args.num_inv_nodes
 
-        inv_locs_end = inv_end + self.args.num_inv_nodes*2
-        inv_locs = state[:, inv_end:inv_locs_end].reshape(
+        inv_locs = state[:, cur_end_idx:cur_end_idx+self.args.num_inv_nodes*2].reshape(
             batch_size, self.args.num_inv_nodes, 2)
+        cur_end_idx += self.args.num_inv_nodes * 2
 
-        demand_end = inv_locs_end + self.args.num_skus 
-        demand = state[:, inv_locs_end:demand_end].reshape(
-            batch_size, self.args.num_skus)
+        num_potential_fulfill = state[:, cur_end_idx:cur_end_idx+self.args.num_inv_nodes].unsqueeze(2)
+        cur_end_idx += self.args.num_inv_nodes
+    
 
-        demand_loc_end = demand_end + 2
-        demand_loc = state[:, demand_end:demand_loc_end].reshape(
-            batch_size, 2)
+        demand_totals = state[:, cur_end_idx:cur_end_idx+1]
+        cur_end_idx += 1
 
-        fulfill_end = demand_loc_end + self.args.num_inv_nodes * self.args.num_skus
-        cur_fulfill = state[:, demand_loc_end:fulfill_end].reshape(
-            batch_size, self.args.num_inv_nodes, self.args.num_skus)
+        demand_quantity = state[:, cur_end_idx:cur_end_idx+1]
+        cur_end_idx += 1
+ 
+        demand_loc = state[:, cur_end_idx:cur_end_idx+2]
+        cur_end_idx += 2
 
-        item_hot = state[:, fulfill_end:].reshape(
-            batch_size, self.args.num_skus)
+        demand_prob = state[:, cur_end_idx:]
 
-        return inv, inv_locs, demand, demand_loc, cur_fulfill, item_hot
+        # Create the input for the inventory node encoder
+        inv_enc_inp = torch.cat((
+            cur_fulfill_totals,
+            cur_item_quantity,
+            inv_totals,
+            inv_locs,
+            num_potential_fulfill
+        ), axis = -1)
+
+
+        # Create the input for the demand node encoder
+        demand_enc_inp = torch.cat((
+            demand_totals,
+            demand_quantity,
+            demand_loc,
+            demand_prob
+        ), axis = 1)
+        
+        return inv_enc_inp, demand_enc_inp
 
     def forward(self, 
                 state) -> torch.Tensor:
         # Add batch dimension if it is not present
         if len(state.shape) == 1:
             state = state.unsqueeze(0)
-
+        
         batch_size = state.shape[0]
-        inv, inv_locs, demand, demand_loc, cur_fulfill, item_hot = self._extract_state(state)
-        item_hot = item_hot.unsqueeze(1)
-        demand = demand.unsqueeze(1)
-
+        inv_enc_inp, demand_enc_inp = self._extract_state(state)
+        #print("inv_enc_inp", inv_enc_inp)
+        # print("demand_enc_inp", demand_enc_inp)
         # Get inventory node embeddings
-        inv_embs = self.inv_encoder(inv, inv_locs, demand, cur_fulfill, item_hot)
-        #inv_embs = inv_embs.view(batch_size, -1)
+        inv_embs = self.inv_encoder(inv_enc_inp)
 
         # Get demand node embedding
-        demand_embs = self.demand_encoder(demand, demand_loc, item_hot)
+        demand_embs = self.demand_encoder(demand_enc_inp).unsqueeze(1)
         
         state_inp = torch.cat((inv_embs, demand_embs), 1)
         
         # Get updated invetnory node embeddings
         state_embs = self.state_enc(state_inp)
         
-        x = F.relu(self._fc_1(state_embs[:, :inv_embs.shape[1]]))
+        x = F.gelu(self._fc_1(state_embs[:, :inv_embs.shape[1]]))
 
         for hidden_fc in self.hidden_fcs:
-            x = F.relu(hidden_fc(x))
+            x = F.gelu(hidden_fc(x))
         q_vals = self._q_out(x)
 
         if batch_size == 1:
+            #print("q_vals.view(-1)", q_vals.view(-1))
             return q_vals.view(-1)
+
         else:
             return q_vals.view(q_vals.shape[0], q_vals.shape[1])

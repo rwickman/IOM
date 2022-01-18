@@ -42,14 +42,14 @@ class Location:
 
 class Node:
     """Superclass for inventory and demand nodes."""
-    def __init__(self, inv_prods: list, loc: Location):
+    def __init__(self, inv_prods: list, loc: Location, num_skus: int):
         """Initialize the node.
         
         Args:
             inv_prods: list of InventoryProducts for either an order or inventory.
             loc: Location of the node.
         """
-        self._inv = Inventory(inv_prods)
+        self._inv = Inventory(inv_prods, num_skus)
         self._loc = loc
 
     @property
@@ -62,19 +62,26 @@ class Node:
 
 class DemandNode(Node):
     """Generalization of customer orders."""
-    def __init__(self, inv_prods: list, loc: Location):
+    def __init__(self, inv_prods: list, loc: Location, num_skus: int):
         """Initialize the DemandNode.
         
         Arg:
             inv_prods: list of InventoryProducts for the order.
             loc: Location of the customer order.
         """
-        super().__init__(inv_prods, loc)
+        super().__init__(inv_prods, loc, num_skus)
 
 class Inventory:
     """Container for collection of SKUs."""
-    def __init__(self, inv_prods: list = None):
+    def __init__(self, inv_prods: list = None, num_skus: int = 0):
         self._inv_dict = {}
+        
+        # Store inventory in list for faster look up time
+        if num_skus > 0:
+            self._inv_list = [0 for _ in range(num_skus)]
+        else:
+            self._inv_list = []
+
         # Number of items currently in inventory
         self._inv_size = 0
         
@@ -95,6 +102,8 @@ class Inventory:
             self._inv_dict[inv_prod.sku_id] = inv_prod.quantity
         else:
             self._inv_dict[inv_prod.sku_id] += inv_prod.quantity
+        if self.inv_list:
+            self._inv_list[inv_prod.sku_id] += inv_prod.quantity
         
         # Update inventory size
         self._inv_size += inv_prod.quantity
@@ -106,6 +115,8 @@ class Inventory:
         
         self._inv_dict[inv_prod.sku_id] -= inv_prod.quantity
         self._inv_size -= inv_prod.quantity
+        if self._inv_list:
+            self._inv_list[inv_prod.sku_id] -= inv_prod.quantity
 
         # Sanity check    
         assert self._inv_size >= 0
@@ -126,7 +137,11 @@ class Inventory:
     @property
     def sku_ids(self):
         return self._inv_dict.keys()
-    
+
+    @property
+    def inv_list(self):
+        return self._inv_list
+
     def items(self):
         """Genrator for the non-item products the inventory."""
         inv_prods = [InventoryProduct(sku_id, quantity) for sku_id, quantity in self._inv_dict.items()]
@@ -138,7 +153,7 @@ class Inventory:
 
 class InventoryNode(Node):
     """Inventory node for fulfillment nodes or stores."""
-    def __init__(self, inv_prods: list, loc: Location, inv_node_id: int):
+    def __init__(self, inv_prods: list, loc: Location, inv_node_id: int, num_skus: int):
         """Initialize the DemandNode.
         
         Arg:
@@ -146,7 +161,7 @@ class InventoryNode(Node):
             loc: Location of the node.
             inv_node_id: unique ID for this node.
         """
-        super().__init__(inv_prods, loc)
+        super().__init__(inv_prods, loc, num_skus)
         self._inv_node_id = inv_node_id
     
     @property
@@ -155,7 +170,8 @@ class InventoryNode(Node):
 
 class InventoryNodeManager:
     """Manage the total inventory over all the inventory nodes."""
-    def __init__(self, inv_nodes: list): 
+    def __init__(self, inv_nodes: list, num_skus: int):
+        self.num_skus = num_skus 
         self._inv_nodes_dict = {}
         self._init_inv(inv_nodes)
         
@@ -175,7 +191,7 @@ class InventoryNodeManager:
                             sku_id,
                             inv_quantity))
 
-        self._inv = Inventory(inv_prods)
+        self._inv = Inventory(inv_prods, self.num_skus)
 
     @property
     def stock(self):

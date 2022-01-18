@@ -9,27 +9,30 @@ from primal_dual_policy import PrimalDual
 from reward_manager import RewardManager
 from evaluator import Evaluator
 from visual import Visual
-from dataset_simulation import DatasetSimulation
+from dataset_simulator import DatasetSimulator
 
 def main(args):
     reward_man = RewardManager(args)
+    
+    if args.use_dataset:
+        dataset_sim = DatasetSimulator(args)
+        args.num_skus = dataset_sim.num_skus
+        args.max_inv_prod = args.ds_max_stock
+        args.coord_bounds = dataset_sim._coord_bounds
+    else:
+        dataset_sim = None
+
     if args.eval:
-        sim = Simulator(args, None)
+        sim = Simulator(args, None, dataset_sim)
         if args.vis:
             visual = Visual(args, sim._inv_nodes)
         else:
             visual = None
 
-        eval = Evaluator(args, reward_man, sim, visual)
-        eval.run()
+        eval_sim = Evaluator(args, reward_man, sim, dataset_sim, visual)
+        eval_sim.run()
     else:
-        if args.use_dataset:
-            dataset_sim = DatasetSimulation()
-            print("dataset_sim.num_skus: ", dataset_sim.num_skus)
-            args.num_skus = dataset_sim.num_skus
-        else:
-            dataset_sim = None
-
+        
         # Create the policy
         if args.policy == "naive":
             policy = NaivePolicy(args, reward_man)
@@ -97,8 +100,7 @@ if __name__ == "__main__":
     sim_args.add_argument("--eval_order_max", type=int, default=None,
                     help="Max number of orders in an episode during evaluation.")
 
-    sim_args.add_argument("--use_dataset", action="store_true",
-                    help="Use a dataset to generate demand.")
+
 
     parser.add_argument("--reward_alpha", type=float, default=0.5,
                     help="Reward item discount.")
@@ -106,17 +108,17 @@ if __name__ == "__main__":
                     help="Number of hidden units used for NN policy.")
     parser.add_argument("--num_hidden", type=int, default=2,
                     help="Number of hidden layers for NN policy.")
-    parser.add_argument("--epsilon", type=float, default=0.95,
+    parser.add_argument("--epsilon", type=float, default=0.99,
                     help="Initial epsilon used for epsilon-greedy in DQN.")
     parser.add_argument("--min_epsilon", type=float, default=0.01,
                     help="Minimum epsilon value used for epsilon-greedy in DQN.")
     parser.add_argument("--epsilon_decay", type=int, default=1024,
                     help="Epsilon decay step used for decaying the epsilon value in epsilon-greedy exploration.")
-    parser.add_argument("--lr", type=float, default=6e-4,
+    parser.add_argument("--lr", type=float, default=2.5e-4,
                     help="Learning rate used for DRL models.")
     parser.add_argument("--lr_gamma", type=float, default=0.999,
                     help="Learning rate decay factor.")
-    parser.add_argument("--min_lr", type=float, default=5e-6,
+    parser.add_argument("--min_lr", type=float, default=1e-5,
                     help="Minimum learning rate.")
     parser.add_argument("--no_lr_decay", action="store_true",
                     help="Don't use lr decay.")
@@ -147,7 +149,8 @@ if __name__ == "__main__":
                     help="Policy to use (e.g., naive, dqn, primal) .")
     parser.add_argument("--train_iter", type=int, default=1,
                     help="Number of train steps after each episode.")
-    
+    parser.add_argument("--save_iter", type=int, default=32,
+                    help="How often to save the policy.")
     
     imit_args = parser.add_argument_group("Imitation Learning")
     imit_args.add_argument("--expert_pretrain", type=int, default=0,
@@ -164,11 +167,13 @@ if __name__ == "__main__":
 
     dqn_args = parser.add_argument_group("DQN")
     dqn_args.add_argument("--emb_size", type=int, default=64,
-        help="Number of transformer encoder and decoder layers.")
+                    help="Size of transformer encoder and decoder layers.")
     dqn_args.add_argument("--no_per", action="store_true",
                     help="Don't use Prioritized Experience Replay (PER) for DQN model.")
     dqn_args.add_argument("--per_beta", type=float, default=0.4,
                     help="Beta used for proportional priority.")
+    dqn_args.add_argument("--decay_steps", type=float, default=4096,
+                    help="Number of training steps required to.decay beta and epsilon")
     dqn_args.add_argument("--eps", type=float, default=1e-9,
                     help="Epsilon used for proportional priority.")
     dqn_args.add_argument("--per_alpha", type=float, default=0.6,
@@ -231,15 +236,25 @@ if __name__ == "__main__":
     
     tran_args = parser.add_argument_group("Transformer")
     tran_args.add_argument("--num_enc_layers", type=int, default=2,
-        help="Number of transformer encoder and decoder layers.")
+                help="Number of transformer encoder and decoder layers.")
     tran_args.add_argument("--num_heads", type=int, default=4,
-        help="Number attention heads.")
+                help="Number attention heads.")
     tran_args.add_argument("--max_pos_enc", type=int, default=10000,
-        help="Maximum positional encoding for encoder.")
-    tran_args.add_argument("--drop_rate", type=float, default=0.05,
-        help="Dropout rate.")
-    parser.add_argument("--dff", type=int, default=128,
-        help="Number of units in the pointwise FFN .")
+                help="Maximum positional encoding for encoder.")
+    tran_args.add_argument("--drop_rate", type=float, default=0.0,
+                help="Dropout rate.")
+    tran_args.add_argument("--dff", type=int, default=256,
+                help="Number of units in the pointwise FFN .")
+    
+    dataset_args = parser.add_argument_group("Dataset Simulator")
+    dataset_args.add_argument("--use_dataset", action="store_true",
+                    help="Use a dataset to generate demand.")
+    dataset_args.add_argument("--ds_max_stock", type=int, default=4000,
+                    help="Maximum number of stock each inventory node can sample during training.")
+    dataset_args.add_argument("--ds_min_stock", type=int, default=0,
+                    help="Minimum number of stock each inventory node can sample during training.")
+    
+
     
     args = parser.parse_args()
     main(args)
