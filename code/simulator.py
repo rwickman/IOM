@@ -7,7 +7,7 @@ import math
 from scipy.stats import beta
 from config import device
 from nodes import *
-
+import torch
 
 class Simulator:
     """Simulator for simulating omni-channel order fulfillment. """
@@ -394,7 +394,7 @@ class Simulator:
                 if self._dataset_sim:
                     policy_results = self._policy(self._inv_nodes, demand_node, self._dataset_sim.cur_sku_distr)
                 else:
-                    policy_results = self._policy(self._inv_nodes, demand_node, torch.tensor([1/self.args.num_skus]).repeat(self.args.num_skus))
+                    policy_results = self._policy(self._inv_nodes, demand_node, torch.tensor([1/self.args.num_skus]).repeat(self.args.num_skus).to(device))
                 self.remove_products(policy_results)
 
                 rewards.extend(

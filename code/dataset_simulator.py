@@ -3,8 +3,9 @@ import numpy as np
 import random
 import torch
 from config import device
+from scipy.stats import betabinom
 
-from nodes import Location, Coordinates, InventoryProduct, DemandNode
+from nodes import Location, Coordinates, InventoryProduct, DemandNode, InventoryNode, InventoryNodeManager
 
 class DatasetSimulator:
     def __init__(self,
@@ -24,6 +25,9 @@ class DatasetSimulator:
             abs(self._loc_df["geolocation_lng"].max()))
 
 
+    def _sample_max_stock(self):
+        return min(max(betabinom.rvs(self.args.ds_max_stock, 0.4, 2), 1), self.args.ds_max_stock)
+        #return random.randint(1, self.args.ds_max_stock)
 
     def _init_demand(self):
         """Initialize properties of the demand."""
@@ -32,15 +36,19 @@ class DatasetSimulator:
         self._order_line_lam = self._orders["order_id"].value_counts().mean()
         
         # Create the PID distribution
-        pid_count = self._orders["product_id"].value_counts()
-        self._sku_distr = torch.tensor(pid_count / pid_count.sum())
+        pid_count = torch.tensor(self._orders["product_id"].value_counts().sort_index().tolist(), dtype=torch.float64)
+        print("pid_count", pid_count)
+        #self._sku_distr = torch.tensor([1/8]).repeat(8).double() #torch.tensor(pid_count / pid_count.sum())
+        #self._sku_distr = self._sku_distr / self._sku_distr.sum()
+        self._sku_distr = pid_count / pid_count.sum()
+        print("self._sku_distr", self._sku_distr, self._sku_distr.sum())
         self._cur_sku_distr = self._sku_distr.clone()
 
         # Number of SKUs
         self.num_skus = len(self._sku_distr)
 
-        self._cur_stock_max = random.randint(1, self.args.ds_max_stock)
-        #print("self._cur_stock_max", self._cur_stock_max)
+        self._cur_stock_max = self._sample_max_stock()
+        print("self._cur_stock_max", self._cur_stock_max)
     
 
     def init_sku_distr(self, stock: list):
@@ -55,15 +63,15 @@ class DatasetSimulator:
         # Get the probability for each item in the inventory
         for item in stock:
             assert item.quantity > 0
-            self._cur_sku_distr[item.sku_id] = self._sku_distr[item.sku_id]
+            self._cur_sku_distr[item.sku_id] = 1/len(self._sku_distr)#self._sku_distr[item.sku_id]
             self._total_stock += item.quantity
         
         # Compute the new probability based on normalizing over the available products
         self._normalize_sku_distr()
 
 
-        self._cur_stock_max = random.randint(self.args.ds_min_stock, self.args.ds_max_stock)
-        # print("self._cur_stock_max", self._cur_stock_max)
+        self._cur_stock_max = self._sample_max_stock()#random.randint(self.args.ds_min_stock, self.args.ds_max_stock)
+        print("self._cur_stock_max", self._cur_stock_max)
     
     def sample_loc(self) -> Location:
         """Sample a location from dataset."""
@@ -85,7 +93,8 @@ class DatasetSimulator:
 
 
     def gen_demand_node(self, inv_dict: dict) -> DemandNode:
-        
+        # TODO: Change how the cur_sku_distr is updated
+
         # Sample a location
         loc = self.sample_loc()
 
@@ -156,3 +165,71 @@ class DatasetSimulator:
             
 
             
+
+class TestDatasetSimulator(DatasetSimulator):
+    def __init__(self,
+                args,
+                loc_csv = "data/olist_data/location/demand_locs.csv",
+                inv_node_loc_csv="data/olist_data/location/inv_node_locs.json",
+                orders_csv="data/olist_data/orders/val_orders.csv",
+                inv_stock_json="data/olist_data/inv_stock/test_inv_node_stock.json"):
+
+        self.args = args
+        self._orders = pd.read_csv(orders_csv)
+        self._inv_stock_json = inv_stock_json
+        self._inv_node_man = self._gen_inv_nodes()
+         
+        
+    def _load_locs(self, loc_json: str) -> list:
+        """Load inventory node locations.
+        
+        Returns:
+            a list of city 2D inventory node locations.
+        """
+        inv_locs = []
+        with open(loc_json) as f:
+            coords_list = json.load(f)
+            for coords in coords_list:
+                loc = Location(Coordinates(coords[0], coords[1]))
+                inv_locs.append(loc)
+        
+        return inv_locs
+
+    # def _load_locs(self, loc_json: str) -> list:
+    #     """Load inventory node locations.
+        
+    #     Returns:
+    #         a list of city 2D inventory node locations.
+    #     """
+    #     inv_locs = []
+    #     with open(self.args.inv_loc) as f:
+    #         self.inv_locs = json.load(f)
+
+
+    def _gen_demand_node(self):
+        pass
+
+    def _gen_inv_nodes(self):
+        # For generating location, will just have to get all seller_ids 
+        # and map them to a inventory node
+        # 
+        # Generating inventory you will need to get all rows with seller ID
+        #  Then, add the stock to the inventory node that corresponds to that seller
+        
+        inv_locs = self._load_locs()
+        with open(self._inv_stock_json) as f:
+            inv_stock_dict = json.load(self._inv_stock_json)
+
+        inv_nodes = []
+        for inv_node_id, stock_dict in inv_stock_dict.items():
+            inv_prods = []
+            for sku_id, quantity in stock_dict.items():
+                inv_prods.append(
+                    InventoryProduct(sku_id, quantity))
+            
+            inv_nodes.append(
+                InventoryNode(inv_prods, inv_locs[inv_node_id], self.args.num_skus))
+        self._inv_nodes = inv_nodes
+        return InventoryNodeManager(self._inv_nodes, self.args.num_skus) 
+
+# TestDatasetSimulator()

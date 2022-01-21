@@ -40,13 +40,21 @@ class DQNEmbTrainer(DQNTrainer):
         """Create state for input into model"""
 
         # Scale features
-        #inv = inv / self._hyper_dict["max_inv_prod"]
+        inv = inv / 100#self._hyper_dict["max_inv_prod"]
         inv_locs = inv_locs.flatten() / self._hyper_dict["coord_bounds"]
-        #demand = demand / self._hyper_dict["max_inv_prod"]
+        demand = demand / 100#self._hyper_dict["max_inv_prod"]
         demand_loc = demand_loc.flatten() / self._hyper_dict["coord_bounds"]
-        #cur_fulfill = cur_fulfill / self._hyper_dict["max_inv_prod"]
+        cur_fulfill = cur_fulfill / 100#self._hyper_dict["max_inv_prod"]
+
+        # Normalize SKU distribution based on inventory
+        sku_distr[(inv.sum(axis=0) == 0).nonzero().flatten()] = 0
+        distr_sum = sku_distr.sum() 
+        if float(distr_sum) > 0:
+            sku_distr = sku_distr / distr_sum
+
+
         sku_distr = torch.log(sku_distr + 1e-16)
-        
+
 
         # Total amount of inventory
         inv_totals = inv.sum(axis = -1)
@@ -64,7 +72,7 @@ class DQNEmbTrainer(DQNTrainer):
 
         # Get the total sum of demand that is requested
         demand_totals = demand.sum(axis=-1).unsqueeze(0)
-        
+
         # Get demand for current item only
         demand_quantity = (item_hot * demand).sum(axis=-1).unsqueeze(0)
 
@@ -98,12 +106,20 @@ class DQNEmb(nn.Module):
         self.state_enc = Encoder(self.args, self.args.num_enc_layers)
 
         # Demand will be cur item quantity, total quantity left
-        self._fc_1 = nn.Linear(self.args.emb_size, self.args.hidden_size)
+        # self._fc_1 = nn.Linear(self.args.emb_size, self.args.hidden_size)
 
-        # Create hidden fcs
-        self.hidden_fcs =  nn.ModuleList([
-            nn.Linear(self.args.hidden_size, self.args.hidden_size) for _ in range(self.args.num_hidden - 1)])
-        self._q_out = nn.Linear(self.args.hidden_size, 1)
+        # # Create hidden fcs
+        # self.hidden_fcs =  nn.ModuleList([
+        #     nn.Linear(self.args.hidden_size, self.args.hidden_size) for _ in range(self.args.num_hidden - 1)])
+        
+        # self._q_out = nn.Linear(self.args.hidden_size, 1)
+        self._q_adv_1 = nn.Linear(self.args.hidden_size, self.args.hidden_size)
+        self._q_adv_2 = nn.Linear(self.args.hidden_size, 1)
+        
+        self._q_val_1 = nn.Linear(self.args.hidden_size, self.args.hidden_size)
+        self._q_val_2 = nn.Linear(self.args.hidden_size, 1)
+
+         
 
     def _extract_state(self, state: torch.Tensor):
         """Extract the individual parts of the state.
@@ -183,11 +199,27 @@ class DQNEmb(nn.Module):
         # Get updated invetnory node embeddings
         state_embs = self.state_enc(state_inp)
         
-        x = F.gelu(self._fc_1(state_embs[:, :inv_embs.shape[1]]))
+        #x = F.relu(self._fc_1(state_embs[:, :inv_embs.shape[1]]))
 
-        for hidden_fc in self.hidden_fcs:
-            x = F.gelu(hidden_fc(x))
-        q_vals = self._q_out(x)
+        # for hidden_fc in self.hidden_fcs:
+        #     x = F.relu(hidden_fc(x))
+        
+        adv = F.relu(self._q_adv_1(state_embs[:, :inv_embs.shape[1]]))
+        adv = self._q_adv_2(state_embs[:, :inv_embs.shape[1]])
+
+        val = F.relu(self._q_val_1(state_embs[:, 0]))
+        val = self._q_val_2(val)
+        #print("adv.shape")
+        # print("adv.shape", adv.shape)
+        # print("val.shape", val.shape)
+        # print("adv.mean(1)", adv.mean(1))
+        # print("adv.mean(1):", adv.mean(1))
+        # print("adv.squeeze(-1)", adv.squeeze(-1))
+        # print("adv.squeeze(-1) - adv.mean(1)", adv.squeeze(-1) - adv.mean(1), "\n")
+
+        q_vals = val + adv.squeeze(-1) - adv.mean(1)
+        #print("q_vals.shape", q_vals.shape)
+        #q_vals = self._q_out(x)
 
         if batch_size == 1:
             #print("q_vals.view(-1)", q_vals.view(-1))

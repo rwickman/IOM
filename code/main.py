@@ -166,7 +166,7 @@ if __name__ == "__main__":
 
 
     dqn_args = parser.add_argument_group("DQN")
-    dqn_args.add_argument("--emb_size", type=int, default=64,
+    dqn_args.add_argument("--emb_size", type=int, default=128,
                     help="Size of transformer encoder and decoder layers.")
     dqn_args.add_argument("--no_per", action="store_true",
                     help="Don't use Prioritized Experience Replay (PER) for DQN model.")
@@ -187,7 +187,7 @@ if __name__ == "__main__":
     
     dqn_args.add_argument("--dqn_steps", type=int, default=1,
                     help="Number of steps to use for multistep DQN.")
-    dqn_args.add_argument("--tgt_tau", type=float, default=0.05,
+    dqn_args.add_argument("--tgt_tau", type=float, default=0.01,
                     help="The tau value to control the update rate of the target DQN parameters.")
 
     pd_args = parser.add_argument_group("Primal-Dual")
@@ -237,7 +237,7 @@ if __name__ == "__main__":
     tran_args = parser.add_argument_group("Transformer")
     tran_args.add_argument("--num_enc_layers", type=int, default=2,
                 help="Number of transformer encoder and decoder layers.")
-    tran_args.add_argument("--num_heads", type=int, default=4,
+    tran_args.add_argument("--num_heads", type=int, default=1,
                 help="Number attention heads.")
     tran_args.add_argument("--max_pos_enc", type=int, default=10000,
                 help="Maximum positional encoding for encoder.")
@@ -253,6 +253,8 @@ if __name__ == "__main__":
                     help="Maximum number of stock each inventory node can sample during training.")
     dataset_args.add_argument("--ds_min_stock", type=int, default=0,
                     help="Minimum number of stock each inventory node can sample during training.")
+    dataset_args.add_argument("--ds_order_csv", default=None,
+                    help="The CSV with orders to use for test.")
     
 
     

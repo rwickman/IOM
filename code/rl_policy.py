@@ -76,7 +76,7 @@ class RLPolicy(Policy, ABC):
 
     def _get_valid_actions(self, state: torch.Tensor) -> torch.Tensor:
         """Get valid actions for the current state vector."""
-
+        print("GETTING VALID ACTIONS IN RL POLICY")
         # Derive the inventory and SKU ID from the state vector 
         inv = state[:self.args.num_inv_nodes * self.args.num_skus].reshape(self.args.num_inv_nodes, self.args.num_skus)
         sku_id = int(state[-self.args.num_skus:].nonzero())
@@ -153,7 +153,7 @@ class RLPolicy(Policy, ABC):
                 model_pred = self.predict(state)
 
                 # Get indices of nodes that have nonzero inventory
-                valid_idxs = (inv[:, inv_prod.sku_id] > 0).nonzero().flatten()
+                valid_idxs = self._get_valid_actions(state)
 
                 # Select an inventory node
                 if run_expert:

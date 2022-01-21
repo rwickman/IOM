@@ -170,7 +170,7 @@ class Encoder(nn.Module):
             nn.TransformerEncoderLayer(
                 d_model=self.args.emb_size,
                 dim_feedforward=self.args.dff,
-                activation="gelu",
+                activation="relu",
                 nhead=self.args.num_heads,
                 dropout=self.args.drop_rate) 
             for _ in range(num_enc_layers)])

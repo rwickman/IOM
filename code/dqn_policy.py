@@ -26,7 +26,7 @@ class DQNTrainer(RLPolicy):
         self._model_tgt_name = model_name + "_tgt"
 
         self._dqn = self._create_model()
-        self._dqn_target = self._create_model()
+        self._dqn_target = self._create_model().eval()
         
         self._optim = optim.Adam(self._dqn.parameters(), self.args.lr)
         self._lr_scheduler = optim.lr_scheduler.MultiplicativeLR(
@@ -69,7 +69,7 @@ class DQNTrainer(RLPolicy):
         for tgt_dqn_param, dqn_param in zip(self._dqn_target.parameters(), self._dqn.parameters()):
             tgt_dqn_param.data.copy_(
                 self.args.tgt_tau * dqn_param.data + (1.0-self.args.tgt_tau) * tgt_dqn_param.data)
-        #self._dqn_target.load_state_dict(self._dqn.state_dict())
+        # self._dqn_target.load_state_dict(self._dqn.state_dict())
 
     @property
     def epsilon_threshold(self):
@@ -120,15 +120,17 @@ class DQNTrainer(RLPolicy):
                     if self._exp_buffer[i].next_state is not None:
                         # Get the valid action for next state the maximizes the q-value
 
-  
+                        
                         valid_actions = self._get_valid_actions(self._exp_buffer[i].next_state)
                         q_next = self._dqn(self._exp_buffer[i].next_state)
 
                         next_action = self.sample_action(q_next[valid_actions], argmax=True)
-                        next_action = valid_actions[next_action] 
+                        next_action = valid_actions[next_action]
+
 
                         # Compute TD target based on target function q-value for next state
                         q_next_target = self._dqn_target(self._exp_buffer[i].next_state)[next_action]
+
                         td_target = self._exp_buffer[i].reward + self._exp_buffer[i].gamma *  q_next_target
 
                 
@@ -230,6 +232,7 @@ class DQNTrainer(RLPolicy):
         next_state_mask = torch.zeros(self.args.batch_size).to(device)
         is_experts = torch.zeros(self.args.batch_size, dtype=torch.bool).to(device)
         gammas = torch.zeros(self.args.batch_size).to(device)
+        valid_actions = torch.zeros(self.args.batch_size, self.args.num_inv_nodes).to(device)
 
         # Unwrap the experiences
         for i, exp in enumerate(exps):
@@ -241,8 +244,9 @@ class DQNTrainer(RLPolicy):
             if exp.next_state is not None:
                 next_states[i] = exp.next_state 
                 next_state_mask[i] = 1
+                valid_actions[i, self._get_valid_actions(exp.next_state)] = 1
 
-        return states, actions, rewards, next_states, next_state_mask, is_experts, gammas
+        return states, actions, rewards, next_states, next_state_mask, is_experts, gammas, valid_actions
 
     def train(self) -> float:
         """Train the model over a sampled batch of experiences.
@@ -256,59 +260,67 @@ class DQNTrainer(RLPolicy):
             is_ws, exps, indices = self._memory.sample(self.args.batch_size, self._train_step)
         td_targets = torch.zeros(self.args.batch_size).to(device)
         
-        states, actions, rewards, next_states, next_state_mask, is_experts, gammas = self._unwrap_exps(exps)
+        states, actions, rewards, next_states, next_state_mask, is_experts, gammas, valid_actions = self._unwrap_exps(exps)
 
         # Select the q-value for every state
         actions = torch.tensor(actions, dtype=torch.int64).to(device)
-
+        
         q_values_matrix = self._dqn(states)
         q_values = q_values_matrix.gather(1, actions.unsqueeze(1)).squeeze(1)
 
         # Run policy on nonempty states
         nonzero_next_states = next_state_mask.nonzero().flatten()
 
-        q_next = self._dqn(next_states[nonzero_next_states]).detach()
+        q_next = self._dqn(next_states).detach() + 1e4
 
-        q_next_target = self._dqn_target(next_states[nonzero_next_states]).detach()
+        q_next = q_next * (1-valid_actions)
+
+        next_actions = q_next.argmax(1)
+
+        q_next_target = self._dqn_target(next_states).detach()
+        target_vals = q_next_target.gather(1, next_actions.unsqueeze(1)).squeeze(1)
+        target_vals = target_vals * next_state_mask
+        td_targets = rewards + gammas * target_vals
+
 
         # index used for getting the next nonempty next state
-        q_next_idx = 0
+        # q_next_idx = 0
         
         expert_margin_loss = 0
 
-        for i in range(self.args.batch_size):
-            # Compute expert margin classification loss (i.e., imitation loss)
-            if is_experts[i]:
-                margin_mask = torch.ones(self.args.num_inv_nodes).to(device)
-                # Mask out the expert action    
-                margin_mask[actions[i]] = 0
+        # for i in range(self.args.batch_size):
+        #     # Compute expert margin classification loss (i.e., imitation loss)
+        #     if is_experts[i]:
+        #         margin_mask = torch.ones(self.args.num_inv_nodes).to(device)
+        #         # Mask out the expert action    
+        #         margin_mask[actions[i]] = 0
                 
-                # Set to margin value
-                margin_mask = margin_mask * self.args.expert_margin
+        #         # Set to margin value
+        #         margin_mask = margin_mask * self.args.expert_margin
                 
-                # Compute the expert imitation loss
-                expert_margin_loss += torch.max(q_values_matrix[i] + margin_mask) - q_values[i]
+        #         # Compute the expert imitation loss
+        #         expert_margin_loss += torch.max(q_values_matrix[i] + margin_mask) - q_values[i]
 
             
-            if not next_state_mask[i]:
-                td_targets[i] = rewards[i]
-            else:
-                # Get the argmax next action for DQN
-                valid_actions = self._get_valid_actions(next_states[i])
+        #     if not next_state_mask[i]:
+        #         td_targets[i] = rewards[i]
+        #     else:
+        #         # Get the argmax next action for DQN
+        #         valid_actions = self._get_valid_actions(next_states[i])
 
-                action = self.sample_action(
-                    q_next[q_next_idx][valid_actions], True)
-                action = int(valid_actions[action])
+        #         action = self.sample_action(
+        #             q_next[q_next_idx][valid_actions], True)
+        #         action = int(valid_actions[action])
 
-                # Set TD Target using the q-value of the target network
-                # This is the Double-DQN target
-                td_targets[i] = rewards[i] + gammas[i] * q_next_target[q_next_idx, action]
-                q_next_idx += 1
+        #         # Set TD Target using the q-value of the target network
+        #         # This is the Double-DQN target
+        #         td_targets[i] = rewards[i] + gammas[i] * q_next_target[q_next_idx, action]
+        #         q_next_idx += 1
  
         self._optim.zero_grad()
 
         # Compute loss
-        td_errors = q_values - td_targets
+        td_errors = td_targets.detach() - q_values
 
         if self.args.no_per:
             loss = torch.mean(td_errors ** 2)
@@ -316,7 +328,7 @@ class DQNTrainer(RLPolicy):
             loss = torch.mean(td_errors ** 2  *  is_ws)
             self._memory.update_priorities(indices, td_errors.detach().abs(), is_experts)
 
-        loss += expert_margin_loss * self.args.expert_lam
+        #loss += expert_margin_loss * self.args.expert_lam
         loss.backward()
         
         # Clip gradient
@@ -338,6 +350,7 @@ class DQNTrainer(RLPolicy):
         self._train_step += 1
 
         if self._train_step % self.args.tgt_update_step == 0:
+            #print("\nUPDATING TARGET\n")
             self._update_target()
         
         # Print out q_values and td_targets for debugging/progress updates
@@ -345,6 +358,13 @@ class DQNTrainer(RLPolicy):
             print("self.epsilon_threshold", self.epsilon_threshold)
             print("q_values", q_values)
             print("td_targets", td_targets)
+            # print("td_error", td_errors)
+            # print("target_vals", target_vals)
+            # print("td_error ** 2", td_errors ** 2)
+            # print("nonzero_next_states", nonzero_next_states)
+            # print("next_state_mask", next_state_mask)
+            # print("is_ws", is_ws)
+            # print("loss", loss)
 
         return float(loss.detach())
 

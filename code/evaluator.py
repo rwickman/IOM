@@ -4,6 +4,8 @@ import seaborn as sns
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
+import torch
+from config import device
 
 from simulator import Simulator  
 from nodes import  DemandNode
@@ -245,9 +247,10 @@ class Evaluator:
                     # Get order results for policy
                     if "dqn" in policy_name:
                         if self.dataset_sim is not None:
+                            
                             policy_results = policy(self.sim._inv_nodes, demand_node, self.dataset_sim.cur_sku_distr, argmax=True)
                         else:
-                            policy_results = policy(self.sim._inv_nodes, demand_node, argmax=True)
+                            policy_results = policy(self.sim._inv_nodes, demand_node, torch.tensor([1/self.args.num_skus]).repeat(self.args.num_skus).to(device), argmax=True)
                     else:
                         policy_results = policy(self.sim._inv_nodes, demand_node)
   
