@@ -11,8 +11,8 @@ from nodes import DemandNode
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class DQNEmbTrainer(DQNTrainer):
-    def __init__(self, args, reward_man: RewardManager):
-        super().__init__(args, reward_man, "dqn_emb_model.pt", "DQNEmb")
+    def __init__(self, args, reward_man: RewardManager, filename="dqn_emb_model.pt", model_name="DQNEmb"):
+        super().__init__(args, reward_man, filename, model_name)
 
     def _create_model(self) -> nn.Module:
         return DQNEmb(self.args).to(device)
@@ -134,6 +134,7 @@ class DQNEmb(nn.Module):
         cur_end_idx += self.args.num_inv_nodes
         
         cur_item_quantity = state[:, cur_end_idx:cur_end_idx+self.args.num_inv_nodes].unsqueeze(2)
+        
         cur_end_idx += self.args.num_inv_nodes
         
         inv_totals = state[:, cur_end_idx:cur_end_idx+self.args.num_inv_nodes].unsqueeze(2)
@@ -176,7 +177,11 @@ class DQNEmb(nn.Module):
             demand_prob
         ), axis = 1)
         
-        return inv_enc_inp, demand_enc_inp
+        # TODO: FIX ERROR WHERE DEMAND GENERATED FOR ITEM THAT IS NOT PRESENT
+
+        valid_actions_mask = (num_potential_fulfill > 0).int()
+
+        return inv_enc_inp, demand_enc_inp, valid_actions_mask
 
     def forward(self, 
                 state) -> torch.Tensor:
@@ -185,7 +190,7 @@ class DQNEmb(nn.Module):
             state = state.unsqueeze(0)
         
         batch_size = state.shape[0]
-        inv_enc_inp, demand_enc_inp = self._extract_state(state)
+        inv_enc_inp, demand_enc_inp, valid_actions_mask = self._extract_state(state)
         #print("inv_enc_inp", inv_enc_inp)
         # print("demand_enc_inp", demand_enc_inp)
         # Get inventory node embeddings
@@ -199,25 +204,39 @@ class DQNEmb(nn.Module):
         # Get updated invetnory node embeddings
         state_embs = self.state_enc(state_inp)
         
-        #x = F.relu(self._fc_1(state_embs[:, :inv_embs.shape[1]]))
+        #x = F.gelu(self._fc_1(state_embs[:, :inv_embs.shape[1]]))
 
         # for hidden_fc in self.hidden_fcs:
-        #     x = F.relu(hidden_fc(x))
+        #     x = F.gelu(hidden_fc(x))
         
-        adv = F.relu(self._q_adv_1(state_embs[:, :inv_embs.shape[1]]))
-        adv = self._q_adv_2(state_embs[:, :inv_embs.shape[1]])
+        adv = F.gelu(self._q_adv_1(state_embs[:, :inv_embs.shape[1]]))
+        adv = self._q_adv_2(adv)
 
-        val = F.relu(self._q_val_1(state_embs[:, 0]))
+        val = F.gelu(self._q_val_1(state_embs[:, -1]))
         val = self._q_val_2(val)
         #print("adv.shape")
         # print("adv.shape", adv.shape)
         # print("val.shape", val.shape)
+        # print("adv.squeeze(-1).shape", adv.squeeze(-1).shape)
+        # print("adv.mean(1).shape", adv.mean(1).shape)
         # print("adv.mean(1)", adv.mean(1))
+        
         # print("adv.mean(1):", adv.mean(1))
         # print("adv.squeeze(-1)", adv.squeeze(-1))
         # print("adv.squeeze(-1) - adv.mean(1)", adv.squeeze(-1) - adv.mean(1), "\n")
+        # print("val", val)
+        # print("adv.squeeze(-1)", adv.squeeze(-1))
+        # print("adv.mean(1)", adv.mean(1))
 
-        q_vals = val + adv.squeeze(-1) - adv.mean(1)
+        num_valid = valid_actions_mask.sum(axis=1)
+        
+        # adv_mean = torch.where(num_valid > 0, (valid_actions_mask * adv).sum(axis=1) / num_valid, num_valid)
+        adv_mean = (valid_actions_mask * adv).sum(axis=1) / valid_actions_mask.sum(axis=1)
+        
+        # Required as invalid actions for training when next state is None
+        adv_mean = torch.nan_to_num(adv_mean)
+        
+        q_vals = val + adv.squeeze(-1) - adv_mean
         #print("q_vals.shape", q_vals.shape)
         #q_vals = self._q_out(x)
 
@@ -226,4 +245,5 @@ class DQNEmb(nn.Module):
             return q_vals.view(-1)
 
         else:
+            #print("q_vals.shape", q_vals.shape)
             return q_vals.view(q_vals.shape[0], q_vals.shape[1])

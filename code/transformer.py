@@ -170,9 +170,10 @@ class Encoder(nn.Module):
             nn.TransformerEncoderLayer(
                 d_model=self.args.emb_size,
                 dim_feedforward=self.args.dff,
-                activation="relu",
+                activation="gelu",
                 nhead=self.args.num_heads,
-                dropout=self.args.drop_rate) 
+                dropout=self.args.drop_rate,
+                batch_first=True) 
             for _ in range(num_enc_layers)])
         
         self.dropout = nn.Dropout(self.args.drop_rate)

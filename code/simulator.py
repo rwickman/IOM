@@ -376,14 +376,13 @@ class Simulator:
 
     def run(self):
         """Run the simulator for self.args.episodes episodes."""
-        import time
+
         for e_i in range(self.args.episodes):
             rewards = []
             for t in range(self.args.order_max):
                 if self._inv_node_man.inv.inv_size <= 0:
                     break
 
-                start_time = time.time()
                 if self._dataset_sim is not None:
                     demand_node = self._dataset_sim.gen_demand_node(
                         self._inv_node_man.inv._inv_dict)
@@ -392,7 +391,7 @@ class Simulator:
 
                 # Get the fulfillment plan
                 if self._dataset_sim:
-                    policy_results = self._policy(self._inv_nodes, demand_node, self._dataset_sim.cur_sku_distr)
+                    policy_results = self._policy(self._inv_nodes, demand_node, self._dataset_sim._sku_distr.float())
                 else:
                     policy_results = self._policy(self._inv_nodes, demand_node, torch.tensor([1/self.args.num_skus]).repeat(self.args.num_skus).to(device))
                 self.remove_products(policy_results)

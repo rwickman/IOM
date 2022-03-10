@@ -16,6 +16,16 @@ from primal_dual_policy import PrimalDual
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+def huber_loss(inp, tgt, delta =1.0, weights=None):
+    """Huber loss that accepts weights."""  
+    diff = (inp - tgt).abs()
+    loss = torch.where(diff < delta, 0.5 * (inp - tgt)**2, delta * (diff - 0.5 * delta))
+    if weights is not None:
+        loss = loss * weights
+
+    return loss.mean()
+
+
 class DQNTrainer(RLPolicy):
     """Trainer and policy for DQN RL approach."""
     def __init__(self, args, reward_man: RewardManager, model_file="dqn_model.pt", model_name="DQN"):
@@ -28,7 +38,7 @@ class DQNTrainer(RLPolicy):
         self._dqn = self._create_model()
         self._dqn_target = self._create_model().eval()
         
-        self._optim = optim.Adam(self._dqn.parameters(), self.args.lr)
+        self._optim = optim.Adam(self._dqn.parameters(), self.args.lr, weight_decay=self.args.weight_decay)
         self._lr_scheduler = optim.lr_scheduler.MultiplicativeLR(
             self._optim,
             lr_lambda=lambda e: self.args.lr_gamma)
@@ -42,7 +52,7 @@ class DQNTrainer(RLPolicy):
         # Temporary storage space for the experiences b/c timesteps span multiple orders
         self._exp_buffer = []
 
-        self._loss_fn = nn.SmoothL1Loss()
+        self._loss_fn = nn.HuberLoss()
         
         if self.args.load:
             self.load()
@@ -69,7 +79,7 @@ class DQNTrainer(RLPolicy):
         for tgt_dqn_param, dqn_param in zip(self._dqn_target.parameters(), self._dqn.parameters()):
             tgt_dqn_param.data.copy_(
                 self.args.tgt_tau * dqn_param.data + (1.0-self.args.tgt_tau) * tgt_dqn_param.data)
-        # self._dqn_target.load_state_dict(self._dqn.state_dict())
+        #self._dqn_target.load_state_dict(self._dqn.state_dict())
 
     @property
     def epsilon_threshold(self):
@@ -89,26 +99,20 @@ class DQNTrainer(RLPolicy):
         This method makes the assumption that self._exp_buffer only contains experiences
         from the same episode.
         """
-        temp_r = []
         rewards = torch.zeros(self.args.dqn_steps)
-        new_r = []
         for i in reversed(range(len(self._exp_buffer))):
             rewards[0] = self._exp_buffer[i].reward
             cur_gamma = self.args.gamma
-            temp_r.append(rewards[0])
             if i + self.args.dqn_steps < len(self._exp_buffer):
                 # Update the experince reward to be the n-step return
                 # NOTE: n experiences at the end will use 1-step return
                 self._exp_buffer[i].reward = rewards.dot(self._gam_arr)
                 self._exp_buffer[i].next_state = self._exp_buffer[i + self.args.dqn_steps].state
                 cur_gamma = cur_gamma ** self.args.dqn_steps
-            elif i + 1 < len(self._exp_buffer):
-                self._exp_buffer[i].reward = rewards.dot(self._gam_arr)
-                self._exp_buffer[i].next_state = self._exp_buffer[-1].next_state
-                cur_gamma = self.args.gamma ** (len(self._exp_buffer) - i)
-
-
-            new_r.append(self._exp_buffer[i].reward)
+            # elif i + 1 < len(self._exp_buffer):
+            #     self._exp_buffer[i].reward = rewards.dot(self._gam_arr)
+            #     self._exp_buffer[i].next_state = self._exp_buffer[-1].next_state
+            #     cur_gamma = self.args.gamma ** (len(self._exp_buffer) - i)
 
             self._exp_buffer[i].gamma = cur_gamma
 
@@ -187,6 +191,7 @@ class DQNTrainer(RLPolicy):
 
     def load(self):
         """Load the models, optimizer, and other related data."""
+        print("LOADING self._model_file", self._model_file, "\n")
         model_dict = torch.load(self._model_file, map_location=device)
         self._dqn.load_state_dict(model_dict[self._model_name])
         if self._model_tgt_name in model_dict:
@@ -199,6 +204,8 @@ class DQNTrainer(RLPolicy):
         self._train_step = model_dict["train_step"]
         self._last_save_step = model_dict["save_step"]
         self._hyper_dict = model_dict["hyper_dict"]
+
+        self._optim.param_groups[0]["lr"] = self.args.lr
 
     def reset(self):
         """Reset for next episode."""
@@ -246,6 +253,7 @@ class DQNTrainer(RLPolicy):
                 next_state_mask[i] = 1
                 valid_actions[i, self._get_valid_actions(exp.next_state)] = 1
 
+                assert valid_actions[i].sum().item() > 0
         return states, actions, rewards, next_states, next_state_mask, is_experts, gammas, valid_actions
 
     def train(self) -> float:
@@ -258,6 +266,7 @@ class DQNTrainer(RLPolicy):
             exps = self._memory.sample(self.args.batch_size)
         else:
             is_ws, exps, indices = self._memory.sample(self.args.batch_size, self._train_step)
+        
         td_targets = torch.zeros(self.args.batch_size).to(device)
         
         states, actions, rewards, next_states, next_state_mask, is_experts, gammas, valid_actions = self._unwrap_exps(exps)
@@ -271,12 +280,17 @@ class DQNTrainer(RLPolicy):
         # Run policy on nonempty states
         nonzero_next_states = next_state_mask.nonzero().flatten()
 
-        q_next = self._dqn(next_states).detach() + 1e4
+        # Get next q-values
+        q_next = self._dqn(next_states).detach() 
 
-        q_next = q_next * (1-valid_actions)
-
+        # Add by factor to ignore invalid q-values for argmax
+        q_next += 1e4
+        
+        # Mask out invalid actions
+        q_next = q_next * valid_actions
         next_actions = q_next.argmax(1)
 
+        # Get target q_values
         q_next_target = self._dqn_target(next_states).detach()
         target_vals = q_next_target.gather(1, next_actions.unsqueeze(1)).squeeze(1)
         target_vals = target_vals * next_state_mask
@@ -321,11 +335,12 @@ class DQNTrainer(RLPolicy):
 
         # Compute loss
         td_errors = td_targets.detach() - q_values
-
+        loss_fac = 100
         if self.args.no_per:
             loss = torch.mean(td_errors ** 2)
         else:
-            loss = torch.mean(td_errors ** 2  *  is_ws)
+            #loss =self._loss_fn(q_values * is_ws, td_targets * is_ws)
+            loss = loss_fac * huber_loss(q_values,td_targets.detach(), weights=is_ws)
             self._memory.update_priorities(indices, td_errors.detach().abs(), is_experts)
 
         #loss += expert_margin_loss * self.args.expert_lam
@@ -341,11 +356,12 @@ class DQNTrainer(RLPolicy):
         self._optim.step()
 
         # Check if using decay and min lr not reached
-        if not self.args.no_lr_decay and self._optim.param_groups[0]["lr"] > self.args.min_lr:
-            # If so, decay learning rate
-            self._lr_scheduler.step()
-        else:
-            self._optim.param_groups[0]["lr"] = self.args.min_lr
+        if not self.args.no_lr_decay:
+            if self._optim.param_groups[0]["lr"] > self.args.min_lr:
+                # If so, decay learning rate
+                self._lr_scheduler.step()
+            else:
+                self._optim.param_groups[0]["lr"] = self.args.min_lr
 
         self._train_step += 1
 
@@ -356,8 +372,13 @@ class DQNTrainer(RLPolicy):
         # Print out q_values and td_targets for debugging/progress updates
         if (self._train_step + 1) % 64 == 0:
             print("self.epsilon_threshold", self.epsilon_threshold)
+            print("LR", self._optim.param_groups[0]["lr"])
             print("q_values", q_values)
             print("td_targets", td_targets)
+            print("loss", loss)
+            print("self._dqn._q_adv_1.weight.grad", self._dqn._q_adv_1.weight.grad.mean(), self._dqn._q_adv_1.weight.grad.min(), self._dqn._q_adv_1.weight.grad.max())
+            print("self._dqn.inv_encoder._inv_emb_fc_1.weight.grad", self._dqn.inv_encoder._inv_emb_fc_1.weight.grad.mean(), self._dqn.inv_encoder._inv_emb_fc_1.weight.grad.min(), self._dqn.inv_encoder._inv_emb_fc_1.weight.grad.max())
+            print("is_ws:", is_ws, "\n")
             # print("td_error", td_errors)
             # print("target_vals", target_vals)
             # print("td_error ** 2", td_errors ** 2)
@@ -366,7 +387,7 @@ class DQNTrainer(RLPolicy):
             # print("is_ws", is_ws)
             # print("loss", loss)
 
-        return float(loss.detach())
+        return float(loss.detach() / loss_fac)
 
     def predict(self, state: torch.Tensor) -> torch.Tensor:
         """Make a prediction on the q_values, used for superclsas __call__."""

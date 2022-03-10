@@ -6,9 +6,8 @@ from nodes import InventoryNode, DemandNode, InventoryProduct
 from fulfillment_plan import FulfillmentPlan
 from policy import PolicyResults, Policy, Experience
 from reward_manager import RewardManager
+from config import device
 
-
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class RLPolicy(Policy, ABC):
     """Superclass for all RLPolcies"""
@@ -93,7 +92,7 @@ class RLPolicy(Policy, ABC):
         
         Args:
             list of InventoryNodes.
-            deamnd_node: the DeamndNode representing the current order.
+            demand_node: the DemandNode representing the current order.
         
         Returns:
             the fulfillment decision results.
@@ -164,7 +163,7 @@ class RLPolicy(Policy, ABC):
                     action = self.sample_action(model_pred.squeeze()[valid_idxs], argmax)
                     action = int(valid_idxs[action])
                 
-                # Get the reward for this timestep
+                # Get the reward for this timestep                
                 reward = self._reward_man.get_reward(
                                 inv_nodes[action],
                                 demand_node,

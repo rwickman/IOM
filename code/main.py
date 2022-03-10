@@ -4,6 +4,7 @@ from simulator import Simulator
 from naive_policy import NaivePolicy
 from dqn_policy import DQNTrainer
 from dqn_emb_policy import DQNEmbTrainer
+from dqn_lookhead_policy import DQNLookaheadTrainer
 from actor_critic_policy import ActorCriticPolicy
 from primal_dual_policy import PrimalDual
 from reward_manager import RewardManager
@@ -43,6 +44,9 @@ def main(args):
             policy = DQNTrainer(args, reward_man)
         elif "dqn_emb" in args.policy:
             policy = DQNEmbTrainer(args, reward_man)
+        elif "lookahead" in args.policy:
+            policy = DQNLookaheadTrainer(args, reward_man)
+
         elif "ac" in args.policy:
             policy = ActorCriticPolicy(args, reward_man)
         elif args.policy == "primal":
@@ -108,7 +112,7 @@ if __name__ == "__main__":
                     help="Number of hidden units used for NN policy.")
     parser.add_argument("--num_hidden", type=int, default=2,
                     help="Number of hidden layers for NN policy.")
-    parser.add_argument("--epsilon", type=float, default=0.99,
+    parser.add_argument("--epsilon", type=float, default=1.0,
                     help="Initial epsilon used for epsilon-greedy in DQN.")
     parser.add_argument("--min_epsilon", type=float, default=0.01,
                     help="Minimum epsilon value used for epsilon-greedy in DQN.")
@@ -120,6 +124,8 @@ if __name__ == "__main__":
                     help="Learning rate decay factor.")
     parser.add_argument("--min_lr", type=float, default=1e-5,
                     help="Minimum learning rate.")
+    parser.add_argument("--weight_decay", type=float, default=0,
+                    help="L2 regularization weight decay.")
     parser.add_argument("--no_lr_decay", action="store_true",
                     help="Don't use lr decay.")
     parser.add_argument("--max_grad_norm", type=float, default=2.0,

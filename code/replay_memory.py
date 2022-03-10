@@ -96,7 +96,9 @@ class PrioritizedExpReplay:
         # Increase per beta by the number of training steps that have elapsed
         #cur_per_beta = min((train_step / self.args.train_iter)/self.args.episodes, 1) * (1-self.args.per_beta) + self.args.per_beta
         cur_per_beta = min(train_step/self.args.decay_steps, 1) * (1-self.args.per_beta) + self.args.per_beta
-
+        #cur_per_beta = 0.4
+        
+        
         is_ws = (sample_ps  * self.cur_cap()) ** -cur_per_beta
 
         # Normalize to scale the updates downwards

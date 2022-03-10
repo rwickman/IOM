@@ -26,8 +26,8 @@ class DatasetSimulator:
 
 
     def _sample_max_stock(self):
-        return min(max(betabinom.rvs(self.args.ds_max_stock, 0.4, 2), 1), self.args.ds_max_stock)
-        #return random.randint(1, self.args.ds_max_stock)
+        #return min(max(betabinom.rvs(self.args.ds_max_stock, 0.4, 2), 1), self.args.ds_max_stock)
+        return random.randint(1, self.args.ds_max_stock)
 
     def _init_demand(self):
         """Initialize properties of the demand."""
@@ -36,13 +36,16 @@ class DatasetSimulator:
         self._order_line_lam = self._orders["order_id"].value_counts().mean()
         
         # Create the PID distribution
-        pid_count = torch.tensor(self._orders["product_id"].value_counts().sort_index().tolist(), dtype=torch.float64)
+        pid_count = torch.tensor(
+            self._orders["product_id"].value_counts().sort_index().tolist(), 
+            dtype=torch.float64, device=device)
+        
         print("pid_count", pid_count)
         #self._sku_distr = torch.tensor([1/8]).repeat(8).double() #torch.tensor(pid_count / pid_count.sum())
         #self._sku_distr = self._sku_distr / self._sku_distr.sum()
-        self._sku_distr = pid_count / pid_count.sum()
+        self._sku_distr = (pid_count / pid_count.sum())
         print("self._sku_distr", self._sku_distr, self._sku_distr.sum())
-        self._cur_sku_distr = self._sku_distr.clone()
+        self._cur_sku_distr = self._sku_distr.clone().cpu().detach()
 
         # Number of SKUs
         self.num_skus = len(self._sku_distr)
@@ -58,14 +61,14 @@ class DatasetSimulator:
             stock: list of aggregate InventoryProducts in all the InventoryNodes. 
         """
         self._total_stock = 0
-        self._cur_sku_distr = torch.zeros_like(self._sku_distr)
+        self._cur_sku_distr = torch.zeros_like(self._sku_distr).detach().cpu()
         
         # Get the probability for each item in the inventory
         for item in stock:
             assert item.quantity > 0
             self._cur_sku_distr[item.sku_id] = 1/len(self._sku_distr)#self._sku_distr[item.sku_id]
             self._total_stock += item.quantity
-        
+        print("self._total_stock", self._total_stock)
         # Compute the new probability based on normalizing over the available products
         self._normalize_sku_distr()
 
@@ -113,7 +116,7 @@ class DatasetSimulator:
         
         for i in range(order_size):
             # Sample a product
-            item_idx = np.random.choice(len(self._cur_sku_distr), p=self._cur_sku_distr)
+            item_idx = np.random.choice(len(self._cur_sku_distr), p=self._cur_sku_distr.detach().cpu())
             
             # Verify it valid inventory
             assert self._cur_sku_distr[item_idx] > 0.0
@@ -131,7 +134,6 @@ class DatasetSimulator:
             
             # Verify not requesting too much of this item
             assert cur_demand_dict[item_idx] <= inv_dict[item_idx] 
-            
 
             # If there isn't inventory left, set the probability to 0
             if cur_demand_dict[item_idx] == inv_dict[item_idx]:
@@ -148,7 +150,7 @@ class DatasetSimulator:
         for i in range(num_stock):
             # Sample a product
             #item_idx = np.random.choice(len(self._sku_distr), p=self._sku_distr)
-            item_idx = np.random.choice(len(self._sku_distr), p=self._sku_distr)
+            item_idx = np.random.choice(len(self._sku_distr), p=self._sku_distr.detach().cpu())
 
             if item_idx not in stock_dict:
                 stock_dict[item_idx] = InventoryProduct(item_idx, 1)
@@ -161,8 +163,6 @@ class DatasetSimulator:
     @property
     def cur_sku_distr(self):
         return self._cur_sku_distr.float().to(device)
-            
-            
 
             
 

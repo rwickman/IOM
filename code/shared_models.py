@@ -16,10 +16,10 @@ class DemandEncoder(nn.Module):
     def forward(self, demand_enc_inp: torch.Tensor):
         """Get demand embedding from node info."""
         
-        # demand_embs = F.relu(
-        #     self._demand_emb_fc_1(demand_enc_inp))
-        # demand_embs = self._demand_emb_fc_2(demand_embs)
-        demand_embs = self._demand_emb_fc_1(demand_enc_inp)
+        demand_embs = F.gelu(
+            self._demand_emb_fc_1(demand_enc_inp))
+        demand_embs = self._demand_emb_fc_2(demand_embs)
+        #demand_embs = self._demand_emb_fc_1(demand_enc_inp)
 
         return demand_embs
 
@@ -38,8 +38,8 @@ class InvEncoder(nn.Module):
     def forward(self, inv_enc_inp:torch.Tensor):
         """Get inventory embedding from node info."""
         
-        # inv_embs = F.relu(self._inv_emb_fc_1(inv_enc_inp))
-        # inv_embs = self._inv_emb_fc_2(inv_embs)
-        inv_embs = self._inv_emb_fc_1(inv_enc_inp)
+        inv_embs = F.gelu(self._inv_emb_fc_1(inv_enc_inp))
+        inv_embs = self._inv_emb_fc_2(inv_embs)
+        #inv_embs = self._inv_emb_fc_1(inv_enc_inp)
         
         return inv_embs
