@@ -49,4 +49,5 @@ class FakeArgs:
         self.expert_mem_cap = 0
         self.train_iter = 1
         self.episodes = 1
+        self.weight_decay = 0.0
 

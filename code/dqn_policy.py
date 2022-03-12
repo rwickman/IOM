@@ -76,10 +76,10 @@ class DQNTrainer(RLPolicy):
 
     def _update_target(self):
         """Perform soft update of the target policy."""
-        for tgt_dqn_param, dqn_param in zip(self._dqn_target.parameters(), self._dqn.parameters()):
-            tgt_dqn_param.data.copy_(
-                self.args.tgt_tau * dqn_param.data + (1.0-self.args.tgt_tau) * tgt_dqn_param.data)
-        #self._dqn_target.load_state_dict(self._dqn.state_dict())
+        # for tgt_dqn_param, dqn_param in zip(self._dqn_target.parameters(), self._dqn.parameters()):
+        #     tgt_dqn_param.data.copy_(
+        #         self.args.tgt_tau * dqn_param.data + (1.0-self.args.tgt_tau) * tgt_dqn_param.data)
+        self._dqn_target.load_state_dict(self._dqn.state_dict())
 
     @property
     def epsilon_threshold(self):
@@ -296,6 +296,9 @@ class DQNTrainer(RLPolicy):
         target_vals = target_vals * next_state_mask
         td_targets = rewards + gammas * target_vals
 
+        # Force it to not assume Q-value rewards greater than the reward (as rewards are strictly negative)
+        td_targets = torch.clip(td_targets, max=rewards, min=-2.0 + rewards)
+
 
         # index used for getting the next nonempty next state
         # q_next_idx = 0
@@ -366,7 +369,7 @@ class DQNTrainer(RLPolicy):
         self._train_step += 1
 
         if self._train_step % self.args.tgt_update_step == 0:
-            #print("\nUPDATING TARGET\n")
+            print("\nUPDATING TARGET\n")
             self._update_target()
         
         # Print out q_values and td_targets for debugging/progress updates
@@ -376,9 +379,10 @@ class DQNTrainer(RLPolicy):
             print("q_values", q_values)
             print("td_targets", td_targets)
             print("loss", loss)
-            print("self._dqn._q_adv_1.weight.grad", self._dqn._q_adv_1.weight.grad.mean(), self._dqn._q_adv_1.weight.grad.min(), self._dqn._q_adv_1.weight.grad.max())
+            print("rewards", rewards)
+            #print("self._dqn._q_adv_1.weight.grad", self._dqn._q_adv_1.weight.grad.mean(), self._dqn._q_adv_1.weight.grad.min(), self._dqn._q_adv_1.weight.grad.max())
             print("self._dqn.inv_encoder._inv_emb_fc_1.weight.grad", self._dqn.inv_encoder._inv_emb_fc_1.weight.grad.mean(), self._dqn.inv_encoder._inv_emb_fc_1.weight.grad.min(), self._dqn.inv_encoder._inv_emb_fc_1.weight.grad.max())
-            print("is_ws:", is_ws, "\n")
+            # print("is_ws:", is_ws, "\n")
             # print("td_error", td_errors)
             # print("target_vals", target_vals)
             # print("td_error ** 2", td_errors ** 2)

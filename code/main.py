@@ -13,7 +13,7 @@ from visual import Visual
 from dataset_simulator import DatasetSimulator
 
 def main(args):
-    reward_man = RewardManager(args)
+
     
     if args.use_dataset:
         dataset_sim = DatasetSimulator(args)
@@ -22,6 +22,8 @@ def main(args):
         args.coord_bounds = dataset_sim._coord_bounds
     else:
         dataset_sim = None
+
+    reward_man = RewardManager(args)
 
     if args.eval:
         sim = Simulator(args, None, dataset_sim)

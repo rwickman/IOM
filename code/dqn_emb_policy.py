@@ -113,11 +113,14 @@ class DQNEmb(nn.Module):
         #     nn.Linear(self.args.hidden_size, self.args.hidden_size) for _ in range(self.args.num_hidden - 1)])
         
         # self._q_out = nn.Linear(self.args.hidden_size, 1)
-        self._q_adv_1 = nn.Linear(self.args.hidden_size, self.args.hidden_size)
-        self._q_adv_2 = nn.Linear(self.args.hidden_size, 1)
+        self._q_out_1 = nn.Linear(self.args.hidden_size, self.args.hidden_size)
+        self._q_out_2 = nn.Linear(self.args.hidden_size, 1)
         
-        self._q_val_1 = nn.Linear(self.args.hidden_size, self.args.hidden_size)
-        self._q_val_2 = nn.Linear(self.args.hidden_size, 1)
+        # self._q_adv_1 = nn.Linear(self.args.hidden_size, self.args.hidden_size)
+        # self._q_adv_2 = nn.Linear(self.args.hidden_size, 1)
+        
+        # self._q_val_1 = nn.Linear(self.args.hidden_size, self.args.hidden_size)
+        # self._q_val_2 = nn.Linear(self.args.hidden_size, 1)
 
          
 
@@ -209,36 +212,22 @@ class DQNEmb(nn.Module):
         # for hidden_fc in self.hidden_fcs:
         #     x = F.gelu(hidden_fc(x))
         
-        adv = F.gelu(self._q_adv_1(state_embs[:, :inv_embs.shape[1]]))
-        adv = self._q_adv_2(adv)
+        # adv = F.gelu(self._q_adv_1(state_embs[:, :inv_embs.shape[1]]))
+        # adv = self._q_adv_2(adv)
 
-        val = F.gelu(self._q_val_1(state_embs[:, -1]))
-        val = self._q_val_2(val)
-        #print("adv.shape")
-        # print("adv.shape", adv.shape)
-        # print("val.shape", val.shape)
-        # print("adv.squeeze(-1).shape", adv.squeeze(-1).shape)
-        # print("adv.mean(1).shape", adv.mean(1).shape)
-        # print("adv.mean(1)", adv.mean(1))
-        
-        # print("adv.mean(1):", adv.mean(1))
-        # print("adv.squeeze(-1)", adv.squeeze(-1))
-        # print("adv.squeeze(-1) - adv.mean(1)", adv.squeeze(-1) - adv.mean(1), "\n")
-        # print("val", val)
-        # print("adv.squeeze(-1)", adv.squeeze(-1))
-        # print("adv.mean(1)", adv.mean(1))
+        # val = F.gelu(self._q_val_1(state_embs[:, -1]))
+        # val = self._q_val_2(val)
 
-        num_valid = valid_actions_mask.sum(axis=1)
+        # num_valid = valid_actions_mask.sum(axis=1)
         
-        # adv_mean = torch.where(num_valid > 0, (valid_actions_mask * adv).sum(axis=1) / num_valid, num_valid)
-        adv_mean = (valid_actions_mask * adv).sum(axis=1) / valid_actions_mask.sum(axis=1)
+        # adv_mean = (valid_actions_mask * adv).sum(axis=1) / valid_actions_mask.sum(axis=1)
         
-        # Required as invalid actions for training when next state is None
-        adv_mean = torch.nan_to_num(adv_mean)
+        # # Required as invalid actions for training when next state is None
+        # adv_mean = torch.nan_to_num(adv_mean)
         
-        q_vals = val + adv.squeeze(-1) - adv_mean
-        #print("q_vals.shape", q_vals.shape)
-        #q_vals = self._q_out(x)
+        # q_vals = val + adv.squeeze(-1) - adv_mean
+        q_vals = F.gelu(self._q_out_1(state_embs[:, :inv_embs.shape[1]]))
+        q_vals = self._q_out_2(q_vals)
 
         if batch_size == 1:
             #print("q_vals.view(-1)", q_vals.view(-1))

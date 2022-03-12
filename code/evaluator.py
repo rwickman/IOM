@@ -14,6 +14,7 @@ from naive_policy import NaivePolicy
 from random_policy import RandomPolicy
 from dqn_policy import DQNTrainer
 from dqn_emb_policy import DQNEmbTrainer
+from dqn_lookhead_policy import DQNLookaheadTrainer
 from primal_dual_policy import PrimalDual
 from actor_critic_policy import ActorCriticPolicy
 from visual import Visual
@@ -69,7 +70,7 @@ class Evaluator:
         self.dataset_sim = dataset_sim
 
         # Remove reward scaling
-        self.reward_man._reward_scale_factor = 1
+        #self.reward_man._reward_scale_factor = 1
 
         # Set the initial inventory
         self._inv_dict = self._init_inv()
@@ -171,6 +172,11 @@ class Evaluator:
                         elif "dqn_emb" in train_dict["policy_name"]:
                             policies[train_dict["policy_name"]] = DQNEmbTrainer(self.args, self.reward_man)
                             policies[train_dict["policy_name"]]._dqn.eval()
+                        elif "lookahead" in train_dict["policy_name"].lower():
+                            print("USING LOOKAHEAD")
+                            policies[train_dict["policy_name"]] = DQNLookaheadTrainer(self.args, self.reward_man)
+                            policies[train_dict["policy_name"]]._dqn.eval()
+
                         else:
                             raise Exception(f'Could not handle {train_dict["policy_name"]} policy!')
         return policies
@@ -191,6 +197,11 @@ class Evaluator:
         for i, policy_tuple in enumerate(eval_results.rewards_dict.items()):
             policy_name, rewards = policy_tuple
             avg_reward = sum(rewards) / len(rewards)
+            ret = 0
+
+            for i, reward in enumerate(rewards):
+                ret += reward * self.args.gamma ** i 
+            print("RETURN: ", ret)
             ax.bar(policy_name, -1 *avg_reward, label=policy_name, zorder=3)
             print(f"{policy_name} Average Reward: ", avg_reward)
         # Add legend 
@@ -245,9 +256,8 @@ class Evaluator:
 
                 for demand_node in demand_nodes:
                     # Get order results for policy
-                    if "dqn" in policy_name:
+                    if "dqn" in policy_name or "lookahead" in policy_name:
                         if self.dataset_sim is not None:
-                            
                             policy_results = policy(self.sim._inv_nodes, demand_node, self.dataset_sim.cur_sku_distr, argmax=True)
                         else:
                             policy_results = policy(self.sim._inv_nodes, demand_node, torch.tensor([1/self.args.num_skus]).repeat(self.args.num_skus).to(device), argmax=True)

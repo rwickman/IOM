@@ -19,10 +19,8 @@ class DatasetSimulator:
         self._orders =  pd.read_csv(orders_csv)
         self._init_demand()
         self._coord_bounds = max(
-            abs(self._loc_df["geolocation_lat"].min()),
-            abs(self._loc_df["geolocation_lat"].max()),
-            abs(self._loc_df["geolocation_lng"].min()),
-            abs(self._loc_df["geolocation_lng"].max()))
+            abs(self._loc_df["geolocation_lat"].min() - self._loc_df["geolocation_lat"].max()),
+            abs(self._loc_df["geolocation_lng"].min() - self._loc_df["geolocation_lng"].max()))
 
 
     def _sample_max_stock(self):

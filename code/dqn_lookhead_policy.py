@@ -1,4 +1,4 @@
-import torch
+import torch, random
 
 from reward_manager import RewardManager
 from dqn_emb_policy import DQNEmb, DQNEmbTrainer
@@ -27,9 +27,9 @@ class DQNLookaheadTrainer(DQNEmbTrainer):
                         inv_prods,
                         inv_prod_idx,
                         cur_val,
-                        exps):
+                        exps,
+                        cur_depth=0):
         inv_prod = inv_prods[inv_prod_idx]
-        print("\ncur_val", cur_val, " inv_prod_idx", inv_prod_idx, "len(inv_prods)", len(inv_prods), "quantity", inv_prods[inv_prod_idx].quantity, "CUR QUANTITY", fulfill_plan.inv.product_quantity(inv_prod.sku_id))
         if fulfill_plan.inv.product_quantity(inv_prod.sku_id) >= inv_prod.quantity:
             # Start fulfilling the next item in the order 
             inv_prod_idx += 1
@@ -53,15 +53,15 @@ class DQNLookaheadTrainer(DQNEmbTrainer):
         # Get indices of nodes that have nonzero inventory
         valid_idxs = self._get_valid_actions(state)
     
-        # Create the current state
-        state = self._create_state(
-            inv,
-            inv_locs,
-            demand,
-            demand_loc,
-            cur_fulfill,
-            item_hot,
-            sku_distr)
+        # # Create the current state
+        # state = self._create_state(
+        #     inv,
+        #     inv_locs,
+        #     demand,
+        #     demand_loc,
+        #     cur_fulfill,
+        #     item_hot,
+        #     sku_distr)
             
         if len(exps) > 0:
             # Update the previous experience next state
@@ -72,12 +72,9 @@ class DQNLookaheadTrainer(DQNEmbTrainer):
         is_last_item = fulfill_plan.inv.product_quantity(inv_prod.sku_id) + 1 >= inv_prod.quantity and \
                 inv_prod_idx + 1 >= len(inv_prods)
         
-        print("is_last_item", is_last_item)
-        print("valid_idxs", valid_idxs)
         # Iterate over every action
         for valid_idx in valid_idxs:
             action = int(valid_idx)
-            print("action", action)
 
             # Get the reward for routing to this inventory node
             reward = self._reward_man.get_reward(
@@ -92,11 +89,14 @@ class DQNLookaheadTrainer(DQNEmbTrainer):
 
                 # Compute the value of this fulfillment plan
                 ## (Subtract reward as model_pred contains estimate of current reward)
-                child_val = cur_val + model_pred[action] - reward
-                print("FINAL VALUE", child_val)
-
+                child_val = cur_val + reward  + (model_pred[action] - reward) * self.args.gamma ** (cur_depth + 1)
+                #print("cur_depth", cur_depth, "child_val", child_val.item(), "Q(s,a)", (model_pred[action] * self.args.gamma ** cur_depth).item(), "reward", reward, "Q(s+1,a+1)", ((model_pred[action] - reward) * self.args.gamma ** (cur_depth + 1)).item())
+                #print("child_val", child_val)
+                #child_val = 0.001 * cur_val + (model_pred[action] - reward) * self.args.gamma ** cur_depth
+                #child_val += 0.999 * cur_val + reward * self.args.gamma ** cur_depth
+                #print("cur_val", cur_val + reward, "child_val", child_val + reward * self.args.gamma ** cur_depth, "model_pred[action]", model_pred[action])
                 # Update the best possible order fulfillment
-                if best_val is None or child_val > best_val:
+                if best_val is None or (child_val > best_val or (not self.args.eval and self.epsilon_threshold >= random.random())):
                     best_val = child_val
                     best_plan = fulfill_plan
                     best_last_action = action
@@ -104,16 +104,13 @@ class DQNLookaheadTrainer(DQNEmbTrainer):
             else:
                 # Increase items fulfilled at this location
                 cur_fulfill[action, inv_prod.sku_id] += 1
-                print("BEFORE ADD: ", fulfill_plan.inv.product_quantity(inv_prod.sku_id))
                 fulfill_plan.add_product(action, InventoryProduct(inv_prod.sku_id, 1))
-                print("AFTER ADD: ", fulfill_plan.inv.product_quantity(inv_prod.sku_id))
 
                 # Decrease inventory at node
                 inv[action, inv_prod.sku_id] -= 1
                 demand[inv_prod.sku_id] -= 1
 
                 # Recursively search this fulfillment path
-                print("GOING IN", action)
                 child_plan, child_val, child_exps = self._fulfill_search(inv_nodes,
                             demand_node,
                             inv,
@@ -126,10 +123,10 @@ class DQNLookaheadTrainer(DQNEmbTrainer):
                             inv_prods,
                             inv_prod_idx,
                             cur_val + reward,
-                            exps + [Experience(state, action, reward, is_expert=False)])
-                print("OUT BRUH", action)
+                            exps + [Experience(state, action, reward, is_expert=False)],
+                            cur_depth + 1)
 
-                if best_val is None or child_val > best_val:
+                if best_val is None or (child_val > best_val or (not self.args.eval and self.epsilon_threshold >= random.random())):
                     best_val = child_val
                     best_plan = child_plan
                     best_exps = child_exps
@@ -149,7 +146,6 @@ class DQNLookaheadTrainer(DQNEmbTrainer):
                 InventoryProduct(inv_prod.sku_id, 1))
             best_exps = exps.copy()
             best_exps.append(best_last_exp)
-            
         return best_plan, best_val, best_exps
 
     
@@ -204,8 +200,6 @@ class DQNLookaheadTrainer(DQNEmbTrainer):
                         0,
                         [])
         
-        print("best_val", best_val)
-        print("exps", exps)
         # Create the results from the order
         results = PolicyResults(fulfill_plan, exps)
 
