@@ -6,6 +6,7 @@ import pandas as pd
 from tqdm import tqdm
 import torch
 from config import device
+from argparse import Namespace
 
 from simulator import Simulator  
 from nodes import  DemandNode
@@ -101,27 +102,37 @@ class Evaluator:
 
     def _gen_demand_nodes(self) -> list:
         """Generate list of demand nodes for an evaluation episode."""
+        print("Generating demand nodes.")
         stock = self.sim._inv_node_man.stock
 
         # Get non-zero items
         stock = [item for item in stock if item.quantity > 0] 
 
         demand_nodes = []
+        
         while len(stock) > 0:
             if self.args.eval_order_max and len(demand_nodes) >= self.args.eval_order_max:
                 break
-
-            demand_node = self.sim._gen_demand_node(stock)
+            
+            if self.dataset_sim is not None:
+                inv_list = [0] * self.args.num_skus
+                for item in stock:
+                    inv_list[item.sku_id] = item.quantity
+                demand_node = self.dataset_sim.gen_demand_node(inv_list)
+            else:
+                demand_node = self.sim._gen_demand_node(stock)
             demand_nodes.append(demand_node)
             # TODO: FIX THIS TO USE DatasetSimulator
             ## Will have to fix gen_demand_node in DS because it updates the demand probs along side
 
             # Update stock
+            was_removed = False
             for inv_prod in demand_node.inv.items():
                 if inv_prod.quantity > 0:
                     # Remove the quantity from stock 
                     for item in stock:
                         if item.sku_id == inv_prod.sku_id:
+                            was_removed = True
                             item.quantity -= inv_prod.quantity
                             # sanity-check
                             assert inv_prod.quantity >= 0 
@@ -129,7 +140,9 @@ class Evaluator:
                             # Remove the item from the stock
                             if item.quantity <= 0:
                                 stock.remove(item)
-
+            assert was_removed
+        self.dataset_sim.init_sku_distr(stock)
+        print("Done generating demand nodes.")
         return demand_nodes
 
     def _load_policies(self) -> list:
@@ -176,7 +189,11 @@ class Evaluator:
                             print("USING LOOKAHEAD")
                             policies[train_dict["policy_name"]] = DQNLookaheadTrainer(self.args, self.reward_man)
                             policies[train_dict["policy_name"]]._dqn.eval()
-
+                            args =  Namespace(**vars(self.args))
+                            args.gamma = 0.0
+                            policies[train_dict["policy_name"] + "_no_gamma"] = DQNLookaheadTrainer(args, self.reward_man)
+                            policies[train_dict["policy_name"] + "_no_gamma"]._dqn.eval()
+                            
                         else:
                             raise Exception(f'Could not handle {train_dict["policy_name"]} policy!')
         return policies
@@ -200,6 +217,7 @@ class Evaluator:
             ret = 0
 
             for i, reward in enumerate(rewards):
+
                 ret += reward * self.args.gamma ** i 
             print("RETURN: ", ret)
             ax.bar(policy_name, -1 *avg_reward, label=policy_name, zorder=3)
@@ -245,12 +263,15 @@ class Evaluator:
 
     def run(self):
         """Evaluate the policies."""
+
         eval_results = EvaluationResults()
         for i in tqdm(range(self.args.eval_episodes)):
             # Generate demand nodes for this episode
             demand_nodes = self._gen_demand_nodes()
+            
             for policy_name, policy in self._policies.items():
                 print("policy_name", policy_name)
+
                 # Run an episode
                 ep_rewards = []
 
@@ -258,6 +279,7 @@ class Evaluator:
                     # Get order results for policy
                     if "dqn" in policy_name or "lookahead" in policy_name:
                         if self.dataset_sim is not None:
+                            self.dataset_sim.init_sku_distr(self.sim._inv_node_man.stock)
                             policy_results = policy(self.sim._inv_nodes, demand_node, self.dataset_sim.cur_sku_distr, argmax=True)
                         else:
                             policy_results = policy(self.sim._inv_nodes, demand_node, torch.tensor([1/self.args.num_skus]).repeat(self.args.num_skus).to(device), argmax=True)

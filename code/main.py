@@ -15,15 +15,20 @@ from dataset_simulator import DatasetSimulator
 def main(args):
 
     
+    reward_man = RewardManager(args)
+    
     if args.use_dataset:
         dataset_sim = DatasetSimulator(args)
         args.num_skus = dataset_sim.num_skus
         args.max_inv_prod = args.ds_max_stock
         args.coord_bounds = dataset_sim._coord_bounds
+        reward_man._reward_scale_factor = 1/dataset_sim._max_dist
+    
     else:
         dataset_sim = None
 
-    reward_man = RewardManager(args)
+    
+
 
     if args.eval:
         sim = Simulator(args, None, dataset_sim)
@@ -31,6 +36,7 @@ def main(args):
             visual = Visual(args, sim._inv_nodes)
         else:
             visual = None
+        print("dataset_sim", dataset_sim)
 
         eval_sim = Evaluator(args, reward_man, sim, dataset_sim, visual)
         eval_sim.run()

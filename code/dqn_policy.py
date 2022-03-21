@@ -297,7 +297,7 @@ class DQNTrainer(RLPolicy):
         td_targets = rewards + gammas * target_vals
 
         # Force it to not assume Q-value rewards greater than the reward (as rewards are strictly negative)
-        td_targets = torch.clip(td_targets, max=rewards, min=-2.0 + rewards)
+        td_targets = torch.clip(td_targets, max=rewards)
 
 
         # index used for getting the next nonempty next state
@@ -338,12 +338,11 @@ class DQNTrainer(RLPolicy):
 
         # Compute loss
         td_errors = td_targets.detach() - q_values
-        loss_fac = 100
         if self.args.no_per:
             loss = torch.mean(td_errors ** 2)
         else:
             #loss =self._loss_fn(q_values * is_ws, td_targets * is_ws)
-            loss = loss_fac * huber_loss(q_values,td_targets.detach(), weights=is_ws)
+            loss = huber_loss(q_values,td_targets.detach(), weights=is_ws)
             self._memory.update_priorities(indices, td_errors.detach().abs(), is_experts)
 
         #loss += expert_margin_loss * self.args.expert_lam
@@ -391,7 +390,7 @@ class DQNTrainer(RLPolicy):
             # print("is_ws", is_ws)
             # print("loss", loss)
 
-        return float(loss.detach() / loss_fac)
+        return float(loss.detach())
 
     def predict(self, state: torch.Tensor) -> torch.Tensor:
         """Make a prediction on the q_values, used for superclsas __call__."""
