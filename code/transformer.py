@@ -166,29 +166,31 @@ class Encoder(nn.Module):
         
         #self.enc_layers = nn.ModuleList([EncoderLayer(self.args) for _ in range(num_enc_layers)])
 
-        self.enc_layers = nn.ModuleList([
-            nn.TransformerEncoderLayer(
+        enc_layer = nn.TransformerEncoderLayer(
                 d_model=self.args.emb_size,
                 dim_feedforward=self.args.dff,
                 activation="gelu",
                 nhead=self.args.num_heads,
                 dropout=self.args.drop_rate,
-                batch_first=True) 
-            for _ in range(num_enc_layers)])
+                batch_first=True)
         
-        self.dropout = nn.Dropout(self.args.drop_rate)
+        print("num_enc_layers", num_enc_layers)
+        self.enc = nn.TransformerEncoder(enc_layer, num_enc_layers)
+        
+        #self.dropout = nn.Dropout(self.args.drop_rate)
     
-        self.pos_enc = positional_encoding(self.args.max_pos_enc, self.args.emb_size)
+        # self.pos_enc = positional_encoding(self.args.max_pos_enc, self.args.emb_size)
 
     def forward(self, x, enc_padding_mask=None):
         #print("torch.sqrt(torch.tensor(self.args.emb_size, dtype=torch.float32))", torch.sqrt(torch.tensor(self.args.emb_size, dtype=torch.float32)))
         #x = x * torch.sqrt(torch.tensor(self.args.emb_size, dtype=torch.float32))
         #x = x + self.pos_enc[:, :x.shape[1], :]
-        x = self.dropout(x)
+        #x = self.dropout(x)
 
         # Run through all encoders
-        for enc_layer in self.enc_layers:
-            x = enc_layer(x, enc_padding_mask)
+        x = self.enc(x)
+        # for enc_layer in self.enc_layers:
+        #     x = enc_layer(x, enc_padding_mask)
         
         # Return output of last encoder layer
         return x
