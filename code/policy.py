@@ -36,6 +36,7 @@ class Policy:
 
     def load_args(self):
         """Load previous CLI arguments."""
+        print("\n@@@@@@@@@@@@@@Loading args@@@@@@@@@@@@\n")
         with open(self._args_file) as f:
             args_dict = json.load(f)
 
@@ -43,6 +44,9 @@ class Policy:
         for key, val in args_dict.items():
             if key in self.args.load_arg_keys:
                 cur_args_dict[key] = val
+                setattr(self.args, key, val)
+                print(f"{key}: {val}")
+
 
     def reset(self):
         pass

@@ -96,6 +96,7 @@ class PrioritizedExpReplay:
         # Increase per beta by the number of training steps that have elapsed
         #cur_per_beta = min((train_step / self.args.train_iter)/self.args.episodes, 1) * (1-self.args.per_beta) + self.args.per_beta
         cur_per_beta = min(train_step/self.args.decay_steps, 1) * (1-self.args.per_beta) + self.args.per_beta
+        #print("cur_per_beta", cur_per_beta)
         #cur_per_beta = 0.4
         
         
@@ -103,17 +104,26 @@ class PrioritizedExpReplay:
 
         # Normalize to scale the updates downwards
         is_ws  = is_ws / is_ws.max()
+        #print("is_ws", is_ws)
 
         return is_ws, exps, indices
 
     def cur_cap(self):
         return self._sum_tree.cur_cap()
 
-    def update_priorities(self, indices, errors, is_experts: torch.tensor):
-        expert_priority_bonus = is_experts * self.args.expert_epsilon
-        for idx, error, bonus in zip(indices, errors, expert_priority_bonus):
-            priority = self._compute_priority(error) + bonus
-            self._sum_tree.update(idx, priority)
+    def update_priorities(self, indices, errors, is_experts: torch.tensor = None):
+        if is_experts is not None:
+            expert_priority_bonus = is_experts * self.args.expert_epsilon
+
+            for idx, error, bonus in zip(indices, errors, expert_priority_bonus):
+                priority = self._compute_priority(error) + bonus
+                self._sum_tree.update(idx, priority)
+        else:
+            for idx, error in zip(indices, errors):
+                priority = self._compute_priority(error)
+                self._sum_tree.update(idx, priority)
+
+
 
     def save(self):
         model_dict = {

@@ -25,11 +25,11 @@ class DemandEncoder(nn.Module):
 
 class InvEncoder(nn.Module):
     """Encodes inventory node state as an embedding."""
-    def __init__(self, args):
+    def __init__(self, args, inv_inp_size = 1 + 1 + 1 + 1 + 2):
         super().__init__()
         self.args = args
         # Total Fulfill + cur item quantity + total stock + loc
-        self.inv_inp_size = 1 + 1 + 1 + 1 + 2
+        self.inv_inp_size = inv_inp_size
 
         # self.inv_inp_size + cur item quantity + total demand quantity left  
         self._inv_emb_fc_1 = nn.Linear(self.inv_inp_size, self.args.emb_size)

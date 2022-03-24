@@ -6,6 +6,7 @@ from dqn_policy import DQNTrainer
 from dqn_emb_policy import DQNEmbTrainer
 from dqn_lookhead_policy import DQNLookaheadTrainer
 from actor_critic_policy import ActorCriticPolicy
+from value_lookhead_policy import ValueLookaheadPolicy
 from primal_dual_policy import PrimalDual
 from reward_manager import RewardManager
 from evaluator import Evaluator
@@ -52,9 +53,10 @@ def main(args):
             policy = DQNTrainer(args, reward_man)
         elif "dqn_emb" in args.policy:
             policy = DQNEmbTrainer(args, reward_man)
+        elif "val_lookahead" in args.policy:
+            policy = ValueLookaheadPolicy(args, reward_man)
         elif "lookahead" in args.policy:
             policy = DQNLookaheadTrainer(args, reward_man)
-
         elif "ac" in args.policy:
             policy = ActorCriticPolicy(args, reward_man)
         elif args.policy == "primal":
@@ -265,11 +267,14 @@ if __name__ == "__main__":
                     help="Use a dataset to generate demand.")
     dataset_args.add_argument("--ds_max_stock", type=int, default=4000,
                     help="Maximum number of stock each inventory node can sample during training.")
-    dataset_args.add_argument("--ds_min_stock", type=int, default=0,
+    dataset_args.add_argument("--ds_min_stock", type=int, default=1,
                     help="Minimum number of stock each inventory node can sample during training.")
     dataset_args.add_argument("--ds_order_csv", default=None,
                     help="The CSV with orders to use for test.")
+    dataset_args.add_argument("--stratified", action="store_true",
+                    help="Use stratified sampling for max stock.")
     
+
 
     
     args = parser.parse_args()

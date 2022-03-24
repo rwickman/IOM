@@ -15,6 +15,8 @@ from naive_policy import NaivePolicy
 from random_policy import RandomPolicy
 from dqn_policy import DQNTrainer
 from dqn_emb_policy import DQNEmbTrainer
+from value_lookhead_policy import ValueLookaheadPolicy
+
 from dqn_lookhead_policy import DQNLookaheadTrainer
 from primal_dual_policy import PrimalDual
 from actor_critic_policy import ActorCriticPolicy
@@ -42,7 +44,7 @@ class EvaluationResults:
         if policy_name not in self.rewards_dict:
             self.rewards_dict[policy_name] = []
 
-        self.rewards_dict[policy_name].extend(rewards)
+        self.rewards_dict[policy_name].append(rewards)
 
     def add_ep_rewards(self, policy_name: str, ep_rewards: list):
         """Add rewards from an episode.
@@ -185,6 +187,16 @@ class Evaluator:
                         elif "dqn_emb" in train_dict["policy_name"]:
                             policies[train_dict["policy_name"]] = DQNEmbTrainer(self.args, self.reward_man)
                             policies[train_dict["policy_name"]]._dqn.eval()
+                        elif "val_lookahead" in train_dict["policy_name"].lower():
+                            print("USING VALUE LOOKAHEAD")
+                            policies[train_dict["policy_name"]] = ValueLookaheadPolicy(self.args, self.reward_man)
+                            policies[train_dict["policy_name"]]._val_model.eval()
+                            
+                            args =  Namespace(**vars(self.args))
+                            args.gamma = 0.0
+                        
+                            policies[train_dict["policy_name"]+ "_no_gamma"] = ValueLookaheadPolicy(args, self.reward_man)
+                            policies[train_dict["policy_name"]+ "_no_gamma"]._val_model.eval()
                         elif "lookahead" in train_dict["policy_name"].lower():
                             print("USING LOOKAHEAD")
                             policies[train_dict["policy_name"]] = DQNLookaheadTrainer(self.args, self.reward_man)
@@ -193,7 +205,7 @@ class Evaluator:
                             args.gamma = 0.0
                             policies[train_dict["policy_name"] + "_no_gamma"] = DQNLookaheadTrainer(args, self.reward_man)
                             policies[train_dict["policy_name"] + "_no_gamma"]._dqn.eval()
-                            
+                        
                         else:
                             raise Exception(f'Could not handle {train_dict["policy_name"]} policy!')
         return policies
@@ -280,7 +292,8 @@ class Evaluator:
                     if "dqn" in policy_name or "lookahead" in policy_name:
                         if self.dataset_sim is not None:
                             self.dataset_sim.init_sku_distr(self.sim._inv_node_man.stock)
-                            policy_results = policy(self.sim._inv_nodes, demand_node, self.dataset_sim.cur_sku_distr, argmax=True)
+                            #print("self.dataset_sim.cur_sku_distr", self.dataset_sim.cur_sku_distr.max(), self.dataset_sim.cur_sku_distr.min())
+                            policy_results = policy(self.sim._inv_nodes, demand_node, self.dataset_sim._sku_distr.float(), argmax=True)
                         else:
                             policy_results = policy(self.sim._inv_nodes, demand_node, torch.tensor([1/self.args.num_skus]).repeat(self.args.num_skus).to(device), argmax=True)
                     else:
@@ -292,13 +305,13 @@ class Evaluator:
                     # Remove products in the order from inventory
                     self.sim.remove_products(policy_results)
 
-                    # Save current episode reward results for this policy  
-                    order_rewards = [exp.reward for exp in policy_results.exps]
+                    # Save current episode reward results for this policy
+                    order_reward = sum([exp.reward for exp in policy_results.exps])
 
                     eval_results.add_rewards(
                         policy_name,
-                        order_rewards)
-                    ep_rewards.extend(order_rewards)
+                        order_reward)
+                    ep_rewards.append(order_reward)
 
                 eval_results.add_ep_rewards(policy_name, ep_rewards)
                 # Sanity-check to verify every item was fulfilled
