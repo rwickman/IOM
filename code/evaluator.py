@@ -16,6 +16,7 @@ from random_policy import RandomPolicy
 from dqn_policy import DQNTrainer
 from dqn_emb_policy import DQNEmbTrainer
 from value_lookhead_policy import ValueLookaheadPolicy
+from value_lookhead_emb_policy import ValueLookaheadEmbPolicy
 
 from dqn_lookhead_policy import DQNLookaheadTrainer
 from primal_dual_policy import PrimalDual
@@ -143,7 +144,7 @@ class Evaluator:
                             if item.quantity <= 0:
                                 stock.remove(item)
             assert was_removed
-        self.dataset_sim.init_sku_distr(stock)
+        #self.dataset_sim.init_sku_distr(stock)
         print("Done generating demand nodes.")
         return demand_nodes
 
@@ -187,6 +188,17 @@ class Evaluator:
                         elif "dqn_emb" in train_dict["policy_name"]:
                             policies[train_dict["policy_name"]] = DQNEmbTrainer(self.args, self.reward_man)
                             policies[train_dict["policy_name"]]._dqn.eval()
+                        elif "val_lookahead_emb" in train_dict["policy_name"].lower():
+                            print("USING VALUE LOOKAHEAD")
+                            policies[train_dict["policy_name"]] = ValueLookaheadEmbPolicy(self.args, self.reward_man)
+                            policies[train_dict["policy_name"]]._val_model                        
+
+                            args =  Namespace(**vars(self.args))
+                            args.gamma = 0.0
+                        
+                            policies[train_dict["policy_name"]+ "_no_gamma"] = ValueLookaheadEmbPolicy(args, self.reward_man)
+                            policies[train_dict["policy_name"]+ "_no_gamma"]._val_model.eval()
+
                         elif "val_lookahead" in train_dict["policy_name"].lower():
                             print("USING VALUE LOOKAHEAD")
                             policies[train_dict["policy_name"]] = ValueLookaheadPolicy(self.args, self.reward_man)
@@ -280,25 +292,38 @@ class Evaluator:
         for i in tqdm(range(self.args.eval_episodes)):
             # Generate demand nodes for this episode
             demand_nodes = self._gen_demand_nodes()
-            
+            sku_distrs = []
+            cur_policy_i = 0
             for policy_name, policy in self._policies.items():
                 print("policy_name", policy_name)
 
                 # Run an episode
                 ep_rewards = []
 
-                for demand_node in demand_nodes:
+                for j, demand_node in enumerate(demand_nodes):
                     # Get order results for policy
                     if "dqn" in policy_name or "lookahead" in policy_name:
                         if self.dataset_sim is not None:
-                            self.dataset_sim.init_sku_distr(self.sim._inv_node_man.stock)
+                            # self.dataset_sim.init_sku_distr(self.sim._inv_node_man.stock)
                             #print("self.dataset_sim.cur_sku_distr", self.dataset_sim.cur_sku_distr.max(), self.dataset_sim.cur_sku_distr.min())
-                            policy_results = policy(self.sim._inv_nodes, demand_node, self.dataset_sim._sku_distr.float(), argmax=True)
+                            if j + 1 < len(sku_distrs):
+                                next_sku_distr = sku_distrs[j+1]
+                                
+                                # print("next_sku_distr", next_sku_distr, next_sku_distr.max(), next_sku_distr.min(), next_sku_distr.mean(), next_sku_distr.sum())
+                            else:
+                                next_sku_distr = torch.zeros_like(sku_distrs[j])
+                                
+
+                            policy_results = policy(self.sim._inv_nodes, demand_node, sku_distrs[j], next_sku_distr, argmax=True)
                         else:
                             policy_results = policy(self.sim._inv_nodes, demand_node, torch.tensor([1/self.args.num_skus]).repeat(self.args.num_skus).to(device), argmax=True)
                     else:
+                        if cur_policy_i == 0:
+                            self.dataset_sim.init_sku_distr(self.sim._inv_node_man.stock)
+                            sku_distrs.append(self.dataset_sim.cur_sku_distr.float().clone())
+
                         policy_results = policy(self.sim._inv_nodes, demand_node)
-  
+
                     if self.visual:
                         self.visual.render_order(demand_node, policy_results, policy_name)
 
@@ -319,6 +344,7 @@ class Evaluator:
 
                 # Restock the inv nodes
                 self._restock_nodes()
+                cur_policy_i += 1
 
                 if self.visual:
                     self.visual.reset()

@@ -63,8 +63,8 @@ class PrioritizedExpReplay:
         self._sum_tree = SumTree(self.args)
         self._memory_file = os.path.join(self.args.save_dir, "memory.pt")
 
-        if self.args.load and not self.args.eval:
-            self.load()
+        # if self.args.load and not self.args.eval:
+        #     self.load()
     
     def add(self, exp: Experience, error: float):
         """Append experience."""
@@ -95,9 +95,10 @@ class PrioritizedExpReplay:
         
         # Increase per beta by the number of training steps that have elapsed
         #cur_per_beta = min((train_step / self.args.train_iter)/self.args.episodes, 1) * (1-self.args.per_beta) + self.args.per_beta
-        cur_per_beta = min(train_step/self.args.decay_steps, 1) * (1-self.args.per_beta) + self.args.per_beta
+        
+        #cur_per_beta = min(train_step/self.args.decay_steps, 1) * (1-self.args.per_beta) + self.args.per_beta
         #print("cur_per_beta", cur_per_beta)
-        #cur_per_beta = 0.4
+        cur_per_beta = 0.4
         
         
         is_ws = (sample_ps  * self.cur_cap()) ** -cur_per_beta
@@ -116,7 +117,7 @@ class PrioritizedExpReplay:
             expert_priority_bonus = is_experts * self.args.expert_epsilon
 
             for idx, error, bonus in zip(indices, errors, expert_priority_bonus):
-                priority = self._compute_priority(error) + bonus
+                priority = self._compute_priority(error.item()) + bonus
                 self._sum_tree.update(idx, priority)
         else:
             for idx, error in zip(indices, errors):

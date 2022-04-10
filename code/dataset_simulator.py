@@ -34,7 +34,7 @@ class DatasetSimulator:
     def _sample_max_stock(self):
         #return min(max(betabinom.rvs(self.args.ds_max_stock, 0.4, 2), 1), self.args.ds_max_stock)
         if self.args.stratified:
-            step_size = self.args.order_max // self.args.num_inv_nodes
+            step_size = 256#self.args.order_max // self.args.num_inv_nodes
             min_stock = max(self._cur_sample_step * step_size, self.args.ds_min_stock)
             max_stock = min((self._cur_sample_step + 1) * (step_size), self.args.ds_max_stock)
             if max_stock >= self.args.ds_max_stock:
@@ -62,7 +62,7 @@ class DatasetSimulator:
         #self._sku_distr = self._sku_distr / self._sku_distr.sum()
         
         # # TODO: DELETE THIS
-        # pid_count = pid_count[:10]
+        # pid_count = pid_count[:500]
         
         self._sku_distr = (pid_count / pid_count.sum())
 
@@ -88,11 +88,12 @@ class DatasetSimulator:
         # Get the probability for each item in the inventory
         for item in stock:
             assert item.quantity > 0
-            self._cur_sku_distr[item.sku_id] = 1/len(self._sku_distr)#self._sku_distr[item.sku_id]
+            self._cur_sku_distr[item.sku_id] = self._sku_distr[item.sku_id]
             self._total_stock += item.quantity
         # print("self._total_stock", self._total_stock)
         # Compute the new probability based on normalizing over the available products
         self._normalize_sku_distr()
+        # print("self._cur_sku_distr.max()", self._cur_sku_distr.max(), self._cur_sku_distr.min(), "self._cur_sku_distr[:100]", self._cur_sku_distr[:100])
 
 
         self._cur_stock_max = self._sample_max_stock()#random.randint(self.args.ds_min_stock, self.args.ds_max_stock)

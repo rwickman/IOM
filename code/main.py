@@ -7,6 +7,8 @@ from dqn_emb_policy import DQNEmbTrainer
 from dqn_lookhead_policy import DQNLookaheadTrainer
 from actor_critic_policy import ActorCriticPolicy
 from value_lookhead_policy import ValueLookaheadPolicy
+from value_lookhead_emb_policy import ValueLookaheadEmbPolicy
+
 from primal_dual_policy import PrimalDual
 from reward_manager import RewardManager
 from evaluator import Evaluator
@@ -53,7 +55,11 @@ def main(args):
             policy = DQNTrainer(args, reward_man)
         elif "dqn_emb" in args.policy:
             policy = DQNEmbTrainer(args, reward_man)
+        elif "val_lookahead_emb" in args.policy:
+        
+            policy = ValueLookaheadEmbPolicy(args, reward_man)
         elif "val_lookahead" in args.policy:
+        
             policy = ValueLookaheadPolicy(args, reward_man)
         elif "lookahead" in args.policy:
             policy = DQNLookaheadTrainer(args, reward_man)
