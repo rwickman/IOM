@@ -106,6 +106,9 @@ class Evaluator:
     def _gen_demand_nodes(self) -> list:
         """Generate list of demand nodes for an evaluation episode."""
         print("Generating demand nodes.")
+        if self.args.val_eval:
+            return self.dataset_sim._demand_nodes
+            
         stock = self.sim._inv_node_man.stock
 
         # Get non-zero items
@@ -292,15 +295,16 @@ class Evaluator:
         for i in tqdm(range(self.args.eval_episodes)):
             # Generate demand nodes for this episode
             demand_nodes = self._gen_demand_nodes()
+
             sku_distrs = []
             cur_policy_i = 0
             for policy_name, policy in self._policies.items():
-                print("policy_name", policy_name)
-
                 # Run an episode
                 ep_rewards = []
 
                 for j, demand_node in enumerate(demand_nodes):
+                    # if j > 500:
+                    #     break
                     # Get order results for policy
                     if "dqn" in policy_name or "lookahead" in policy_name:
                         if self.dataset_sim is not None:
@@ -309,7 +313,7 @@ class Evaluator:
                             if j + 1 < len(sku_distrs):
                                 next_sku_distr = sku_distrs[j+1]
                                 
-                                # print("next_sku_distr", next_sku_distr, next_sku_distr.max(), next_sku_distr.min(), next_sku_distr.mean(), next_sku_distr.sum())
+                                #print("next_sku_distr", next_sku_distr, next_sku_distr.max(), next_sku_distr.min(), next_sku_distr.mean(), next_sku_distr.sum())
                             else:
                                 next_sku_distr = torch.zeros_like(sku_distrs[j])
                                 

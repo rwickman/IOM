@@ -88,6 +88,9 @@ class Simulator:
         # Empty the inventory
         self._inv_node_man.empty()
 
+        if self._dataset_sim is not None and not self.args.eval:
+            self._dataset_sim.reset()
+
         # Restock the inventory in the inventory nodes
         self._restock_inv()
 
@@ -111,6 +114,7 @@ class Simulator:
         Returns:
             the generated inventory node.
         """
+        print("\n\n_gen_inv_node\n\n")
         if loc is None:
             loc = self._rand_loc()
 
@@ -119,6 +123,9 @@ class Simulator:
         # Generate the inventory for this node
         if self._dataset_sim is not None:
             inv_prods = self._dataset_sim.gen_inv_node_stock()
+            for inv_prod in inv_prods:
+                if inv_prod.sku_id == 21:
+                    print(inv_prod.sku_id, type(inv_prod.sku_id))
         else:
             inv_prods = self._gen_inv_node_stock(self.args.max_inv_prod)
 
@@ -201,6 +208,8 @@ class Simulator:
                 
                 
             for inv_prod in inv_prods:
+                if inv_prod.sku_id == 21:
+                    print("\nFOUND 21\n")
                 self._inv_node_man.add_product(i, inv_prod)
 
     def _gen_demand_node(self, stock: list = None):

@@ -4,6 +4,7 @@ import random
 import torch
 from config import device
 from scipy.stats import betabinom
+import json
 
 from nodes import Location, Coordinates, InventoryProduct, DemandNode, InventoryNode, InventoryNodeManager
 
@@ -24,12 +25,13 @@ class DatasetSimulator:
         c_2 = (self._loc_df["geolocation_lat"].max(), self._loc_df["geolocation_lng"].max())
         self._max_dist = ((c_1[0] - c_2[0]) ** 2 + (c_1[1] - c_2[1]) ** 2) ** 0.5
 
-        print("@@@@@@@@@@@@@@@@@@\nCOORD DIST: ", ((c_1[0] - c_2[0]) ** 2 + (c_1[1] - c_2[1]) ** 2)**0.5, "\n")
-
+       
         self._coord_bounds = max(
             abs(self._loc_df["geolocation_lat"].max() - self._loc_df["geolocation_lat"].min()),
             abs(self._loc_df["geolocation_lng"].max() - self._loc_df["geolocation_lng"].min()))
-
+        
+        print("self._max_dist", self._max_dist)
+        print("self._coord_bounds", self._coord_bounds)
 
     def _sample_max_stock(self):
         #return min(max(betabinom.rvs(self.args.ds_max_stock, 0.4, 2), 1), self.args.ds_max_stock)
@@ -58,8 +60,6 @@ class DatasetSimulator:
             dtype=torch.float64, device=device)
         
         print("pid_count", pid_count)
-        #self._sku_distr = torch.tensor([1/8]).repeat(8).double() #torch.tensor(pid_count / pid_count.sum())
-        #self._sku_distr = self._sku_distr / self._sku_distr.sum()
         
         # # TODO: DELETE THIS
         # pid_count = pid_count[:500]
@@ -75,7 +75,7 @@ class DatasetSimulator:
         self._cur_stock_max = self._sample_max_stock()
         print("self._cur_stock_max", self._cur_stock_max)
     
-
+    
     def init_sku_distr(self, stock: list):
         """Reset the SKU distribution
         
@@ -111,7 +111,21 @@ class DatasetSimulator:
                 float(loc_row_sample["geolocation_lng"])))
 
         return loc_sample
-    
+
+    def reset(self):
+        # Random the sku distribution
+        pid_count = self._orders["product_id"].value_counts().tolist()
+        random.shuffle(pid_count)
+        pid_count = torch.tensor(
+            pid_count, 
+            dtype=torch.float64, device=device)
+        pid_count = pid_count + torch.randint(0, 5, (len(pid_count),)).to(device)
+        self._sku_distr = pid_count / pid_count.sum()
+
+        self._cur_sku_distr = self._sku_distr.clone().cpu().detach()
+
+
+
     def _normalize_sku_distr(self):
         distr_sum = self._cur_sku_distr.sum()
         if float(distr_sum) > 0:
@@ -192,16 +206,24 @@ class DatasetSimulator:
 class TestDatasetSimulator(DatasetSimulator):
     def __init__(self,
                 args,
-                loc_csv = "data/olist_data/location/demand_locs.csv",
+                loc_csv = "data/olist_data/location/val_customers.csv",
                 inv_node_loc_csv="data/olist_data/location/inv_node_locs.json",
                 orders_csv="data/olist_data/orders/val_orders.csv",
-                inv_stock_json="data/olist_data/inv_stock/test_inv_node_stock.json"):
+                inv_stock_json="data/olist_data/inv_stock/val_inv_node_stock.json"):
 
         self.args = args
         self._orders = pd.read_csv(orders_csv)
         self._inv_stock_json = inv_stock_json
-        self._inv_node_man = self._gen_inv_nodes()
-         
+        self._cur_inv_stock_call = 0
+        # Values calculated from training dataset
+        self._max_dist = 141.28443073333884
+        self._coord_bounds = 115.28698054692629
+        self.num_skus = 2000
+        
+        
+        self._init_demand()
+        self._gen_inv_nodes()
+        self._init_demand_nodes(loc_csv)
         
     def _load_locs(self, loc_json: str) -> list:
         """Load inventory node locations.
@@ -218,19 +240,68 @@ class TestDatasetSimulator(DatasetSimulator):
         
         return inv_locs
 
-    # def _load_locs(self, loc_json: str) -> list:
-    #     """Load inventory node locations.
+    def _init_demand_nodes(self, loc_csv):
+        cust_locs = pd.read_csv(loc_csv)
+        self._demand_nodes = []
+        demand_prods_dict = {}
         
-    #     Returns:
-    #         a list of city 2D inventory node locations.
-    #     """
-    #     inv_locs = []
-    #     with open(self.args.inv_loc) as f:
-    #         self.inv_locs = json.load(f)
+        prev_order_id = None
+        cur_demand_idx = 0
+        for order_id, p_id  in zip(self._orders.order_id, self._orders.product_id):
+            p_id = int(p_id)
+            # Iterate over rows
+            # If this is the same order
+            ##  if this is the same p_id
+            if prev_order_id is not None and prev_order_id != order_id:
+                # Create a demand node from the previous order
+                loc = Location(
+                    Coordinates(
+                        float(cust_locs.iloc[cur_demand_idx]["geolocation_lat"]),
+                        float(cust_locs.iloc[cur_demand_idx]["geolocation_lng"])))
+                
+                self._demand_nodes.append(
+                    DemandNode(demand_prods_dict.values(), loc, self.num_skus))
+                
+                demand_prods_dict = {}
+                cur_demand_idx += 1
+
+            if p_id not in demand_prods_dict:
+                demand_prods_dict[p_id] = InventoryProduct(p_id, 1)
+            else:
+                demand_prods_dict[p_id].quantity += 1
+
+            prev_order_id = order_id
+
+    def _init_demand(self):
+        """Initialize properties of the demand."""
+        self.num_skus = 2000
+        # Create the PID distribution
+        pid_count = torch.zeros(
+            self.num_skus, 
+            dtype=torch.float64, device=device)
+        
+        v = self._orders.product_id.value_counts()
+
+        pid_count[v.keys()] = torch.tensor(v.tolist(), dtype=torch.float64, device=device)
+        print("pid_count.sum()", pid_count.sum())
+
+        
+        # # TODO: DELETE THIS
+        # pid_count = pid_count[:500]
+        
+        self._sku_distr = (pid_count / pid_count.sum())
+
+        print("self._sku_distr", self._sku_distr, self._sku_distr.sum())
+        self._cur_sku_distr = self._sku_distr.clone().cpu().detach()
 
 
     def _gen_demand_node(self):
-        pass
+        demand_node = self._demand_nodes[self._demand_idx]
+        self._demand_idx += 1
+        return self._demand_idx
+
+        
+
 
     def _gen_inv_nodes(self):
         # For generating location, will just have to get all seller_ids 
@@ -238,21 +309,30 @@ class TestDatasetSimulator(DatasetSimulator):
         # 
         # Generating inventory you will need to get all rows with seller ID
         #  Then, add the stock to the inventory node that corresponds to that seller
-        
-        inv_locs = self._load_locs()
-        with open(self._inv_stock_json) as f:
-            inv_stock_dict = json.load(self._inv_stock_json)
+        self._demand_idx = 0
 
-        inv_nodes = []
+        # inv_locs = self._load_locs()
+        with open(self._inv_stock_json) as f:
+            inv_stock_dict = json.load(f)
+
+        self._inv_nodes_stock = []
+        quantity_added = 0
         for inv_node_id, stock_dict in inv_stock_dict.items():
             inv_prods = []
             for sku_id, quantity in stock_dict.items():
                 inv_prods.append(
-                    InventoryProduct(sku_id, quantity))
-            
-            inv_nodes.append(
-                InventoryNode(inv_prods, inv_locs[inv_node_id], self.args.num_skus))
-        self._inv_nodes = inv_nodes
-        return InventoryNodeManager(self._inv_nodes, self.args.num_skus) 
+                    InventoryProduct(int(sku_id), quantity))
+                quantity_added += quantity
+            # inv_nodes.append(
+            #     InventoryNode(inv_prods, inv_locs[inv_node_id], self.args.num_skus))
+            self._inv_nodes_stock.append(inv_prods)
+        # self._inv_nodes = inv_nodes
+        # return InventoryNodeManager(self._inv_nodes, self.args.num_skus)
+    
+    def gen_inv_node_stock(self):
+        cur_stock = self._inv_nodes_stock[self._cur_inv_stock_call]
+        self._cur_inv_stock_call = (self._cur_inv_stock_call + 1) % len(self._inv_nodes_stock)
 
-# TestDatasetSimulator()
+        return cur_stock        
+        
+# TestDatasetSimulator(None)

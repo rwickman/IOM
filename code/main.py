@@ -13,7 +13,7 @@ from primal_dual_policy import PrimalDual
 from reward_manager import RewardManager
 from evaluator import Evaluator
 from visual import Visual
-from dataset_simulator import DatasetSimulator
+from dataset_simulator import DatasetSimulator, TestDatasetSimulator
 
 def main(args):
 
@@ -21,7 +21,11 @@ def main(args):
     reward_man = RewardManager(args)
     
     if args.use_dataset:
-        dataset_sim = DatasetSimulator(args)
+        if args.val_eval:
+            dataset_sim = TestDatasetSimulator(args)
+        else:
+            dataset_sim = DatasetSimulator(args)
+
         args.num_skus = dataset_sim.num_skus
         args.max_inv_prod = args.ds_max_stock
         args.coord_bounds = dataset_sim._coord_bounds
@@ -229,7 +233,8 @@ if __name__ == "__main__":
                     help="Don't plot the random results in evaluation.")
     eval_args.add_argument("--no_naive_fulfill_eval", action="store_true",
                     help="Don't plot the naive results in evaluation.")
-
+    eval_args.add_argument("--val_eval", action="store_true",
+                    help="Perform a run on the validation set.")
 
 
     vis_args = parser.add_argument_group("Visual")

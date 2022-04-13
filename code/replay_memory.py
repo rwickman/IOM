@@ -63,8 +63,8 @@ class PrioritizedExpReplay:
         self._sum_tree = SumTree(self.args)
         self._memory_file = os.path.join(self.args.save_dir, "memory.pt")
 
-        # if self.args.load and not self.args.eval:
-        #     self.load()
+        if self.args.load and not self.args.eval:
+            self.load()
     
     def add(self, exp: Experience, error: float):
         """Append experience."""
